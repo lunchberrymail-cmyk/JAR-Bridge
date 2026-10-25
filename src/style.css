@@ -1,0 +1,99 @@
+.jar-bridge { color:var(--text-primary,#e8e5f0); background:var(--bg-primary,#24242c); font-family:inherit; }
+.jar-bridge * { box-sizing:border-box; }
+.jar-bridge [hidden] { display:none!important; }
+.jar-expand{display:block;margin:18px 24px 0;white-space:normal;line-height:1.5}.jar-import-modal .jar-shell{padding:8px 16px 16px}.jar-import-modal .jar-guide{padding:20px}
+@media(max-width:640px){.jar-import-modal .jar-shell{padding:20px 16px}}
+.jar-shell { max-width:880px; margin:auto; padding:30px 24px 24px; }
+.jar-eyebrow { color:#bca8ed; font-size:10px; font-weight:700; letter-spacing:.16em; margin-bottom:10px; }
+.jar-shell h1 { font-size:30px; line-height:1.2; font-weight:650; letter-spacing:-.04em; margin:0 0 12px; }
+.jar-intro { font-size:14px; color:#b7b3c3; line-height:1.65; margin:0 0 25px; }
+.jar-guide{border:1px solid #665273;border-radius:14px;padding:22px;background:linear-gradient(135deg,#383042,#2a2933);margin-bottom:20px}
+.jar-guide>h2{font-size:22px;line-height:1.3;margin:0 0 10px;color:#eee4f8}.jar-guide>.jar-intro{margin-bottom:16px}.jar-guide .jar-help{font-size:13px;color:#c2bccc}
+.jar-guide-platform{border-left:3px solid #bba0e0;padding:10px 12px;background:#211c2c66;border-radius:0 7px 7px 0;margin-bottom:14px}.jar-guide-platform strong{font-size:14px;color:#f1e9f8}.jar-guide-platform p{margin:5px 0 0}
+.jar-guide-routes{display:flex;gap:8px;margin:0 0 16px}.jar-guide-route{flex:1;min-width:0;font:inherit;font-size:13px;line-height:1.5;padding:10px;border:1px solid #776084;border-radius:8px;background:#292430;color:#d2c6dd;cursor:pointer;white-space:normal}.jar-guide-route[aria-pressed=true]{background:#51415f;border-color:#c4a4e5;color:#f4eafd;font-weight:600}
+.jar-guide-mobile{padding:16px;border:1px solid #776084;border-radius:10px;background:#211d2b66}.jar-guide-mobile h3{font-size:18px;line-height:1.4;margin:0 0 10px;color:#f1e9f8}.jar-guide-mobile h3:focus-visible{outline:2px solid #d5bcff;outline-offset:3px}.jar-guide-mobile>p{margin:12px 0}.jar-guide-mobile>p:last-child{margin-bottom:0}.jar-guide-mobile>.jar-button{white-space:normal;line-height:1.5}.jar-guide-alternatives{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.jar-guide-alternatives>div{padding:12px;border:1px solid #ffffff24;border-radius:8px;background:#302837}.jar-guide-alternatives a{font-size:14px;font-weight:650}.jar-guide-alternatives p{margin:8px 0 0}
+@media(max-width:520px){.jar-guide-routes{flex-direction:column}.jar-guide-alternatives{grid-template-columns:1fr}.jar-guide-mobile{padding:12px}}
+.jar-guide-journey{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;padding:0;margin:18px 0}.jar-guide-journey li{position:relative;display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid #ffffff19;border-radius:8px;background:#211c2c55}.jar-guide-journey li+li::before{content:'→';position:absolute;left:-20px;top:23px;color:#c6a8e7}.jar-guide-journey strong{font-size:14px;color:#eee2fc}.jar-guide-journey span{font-size:12px;line-height:1.5;color:#bfb5cc}
+.jar-guide-definitions{display:grid;grid-template-columns:1fr 1fr;gap:20px}.jar-guide-definitions p{margin:0;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.55;color:#bfb5cc}.jar-guide-definitions strong{font-size:13px;color:#e8dcee}.jar-guide-pair{margin:12px 0 18px}
+.jar-guide-walkthrough{padding:16px;border:1px solid #776084;border-radius:10px;background:#211d2b66}.jar-guide-walkthrough-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.jar-guide-walkthrough-heading h3{font-size:15px;margin:0;line-height:1.4;color:#eee4f8}.jar-guide-progress{font-size:12px;color:#bfb2cd;white-space:nowrap}
+.jar-guide-navigation{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 18px}.jar-guide-step-button{font:inherit;font-size:12px;color:#bfb2cd;background:#292430;border:1px solid #62526e;border-radius:6px;padding:7px 9px;cursor:pointer;min-height:32px}.jar-guide-step-button[aria-current=step]{color:#21182c;background:#d0b3ed;border-color:#d0b3ed;font-weight:650}
+.jar-guide-location{font-size:10px;letter-spacing:.12em;font-weight:700;color:#c1a5dc;margin:0 0 8px}.jar-guide-page h4{font-size:19px;line-height:1.35;margin:0 0 10px;color:#f1e9f8}.jar-guide-page h4:focus-visible{outline:2px solid #d5bcff;outline-offset:3px}.jar-guide-page>p{margin:10px 0}.jar-guide-tutorial{list-style:decimal;padding-left:20px;display:grid;gap:8px;margin:12px 0}.jar-guide-tutorial li{padding-left:3px}.jar-guide-note{border-left:2px solid #9b7bb8;padding-left:10px}.jar-guide-example{padding:9px 10px;border:1px solid #665273;border-radius:6px;font-family:monospace;font-size:12px;color:#e6cff5;background:#211c2c;overflow-wrap:anywhere}
+.jar-guide-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px}.jar-guide-controls>.jar-button{margin-left:auto;white-space:normal}
+.jar-guide-ready{font-size:14px;line-height:1.4;margin:22px 0 0;color:#eee4f8}.jar-guide-actions{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}.jar-guide-actions .jar-link{flex-basis:100%;text-align:left}
+.jar-guide-details{border-top:1px solid #ffffff16;padding:14px 0}.jar-guide-details:last-child{padding-bottom:0}.jar-guide-details>summary{font-size:13px;font-weight:600;color:#dac6ee;cursor:pointer}.jar-guide-details p{margin:10px 0 0}.jar-guide-link{color:#d8b6f4;text-underline-offset:3px}.jar-back-guide{margin-bottom:16px}.jar-task-heading{font-size:20px;margin:0 0 12px;line-height:1.35}.jar-address-details{margin:14px 0}.jar-address-details>summary{color:#bfa9d4;font-size:12px;cursor:pointer}.jar-address-details .jar-field{margin-top:12px}.jar-connect>a{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.jar-bridge a:focus-visible{outline:2px solid #d5bcff;outline-offset:3px}
+@media(max-width:640px){.jar-guide-journey{gap:18px}.jar-guide-journey li{padding:10px}.jar-guide-journey li+li::before{left:-16px}.jar-guide-definitions{gap:12px}.jar-guide-walkthrough{padding:12px}.jar-guide-navigation{gap:5px}.jar-guide-step-button{padding:7px}.jar-guide-journey span{font-size:11px}}
+@media(max-width:400px){.jar-guide-journey{grid-template-columns:1fr;gap:16px}.jar-guide-journey li+li::before{content:'↓';left:50%;top:-17px}.jar-guide-definitions{grid-template-columns:1fr}}
+
+.jar-tabs { display:flex; gap:6px; padding:5px; background:#1c1c23; border:1px solid #44414e; border-radius:11px; margin-bottom:24px; }
+.jar-tab { flex:1; border:0; border-radius:7px; padding:10px; background:transparent; color:#aaa5b8; font:inherit; font-size:13px; cursor:pointer; }
+.jar-tab[aria-selected=true] { background:#494053; color:#f5eefc; box-shadow:0 1px 3px #0005; }
+.jar-panel { margin-bottom:24px; }
+.jar-link-panel{padding:16px;border:1px solid #776084;border-radius:10px;background:#302837;margin:0 0 24px}.jar-link-panel h3{font-size:18px;line-height:1.4;margin:0 0 10px}.jar-link-panel .jar-help{margin:10px 0}.jar-link-panel .jar-help:last-child{margin-bottom:0}.jar-chat-card-notice{padding:0 0 16px;margin-bottom:16px;border-bottom:1px solid #61516d}.jar-chat-card-notice p{margin:0 0 10px}
+.jar-saved-details{border-top:1px solid #ffffff20;padding-top:14px;margin:18px 0}.jar-saved-details>summary{font-size:13px;color:#c7b2dd;cursor:pointer}.jar-saved-details[open]>summary{margin-bottom:16px}.jar-close-guide{margin-bottom:16px}.jar-back-guide{display:block;margin-left:auto;font-size:12px}.jar-history-jar>.jar-saved-details{margin-top:20px}.jar-history-link{margin-top:16px}.jar-history-link .jar-connect{margin-top:0}
+.jar-connect { display:flex; align-items:flex-end; gap:10px; }
+.jar-field { display:flex; flex-direction:column; gap:8px; flex:1; min-width:0; }
+.jar-label { font-size:12px; font-weight:600; color:#d0c9de; }
+.jar-input { width:100%; padding:11px 12px; border:1px solid #56515f; border-radius:8px; background:#2f2e38; color:#eee9f5; font:inherit; font-size:13px; outline:none; }
+.jar-input:focus { border-color:#b8a0e9; box-shadow:0 0 0 2px #b8a0e923; }
+.jar-button { padding:11px 15px; border:1px solid #635770; border-radius:8px; background:#403948; color:#eee7f7; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
+.jar-primary { background:#b9a0e8; color:#21182c; border-color:#b9a0e8; font-weight:650; }
+.jar-button:hover:not(:disabled) { filter:brightness(1.1); }
+.jar-bridge button:disabled { opacity:.45; cursor:default; }
+.jar-bridge button:focus-visible,.jar-bridge summary:focus-visible { outline:2px solid #d5bcff; outline-offset:3px; }
+.jar-help,.jar-connection-state,.jar-footer { font-size:12px; line-height:1.65; color:#a9a3b5; }
+.jar-connection-state { padding-left:12px; position:relative; margin-top:16px; }
+.jar-connection-state::before { content:''; width:5px; height:5px; background:#a98ac9; position:absolute; border-radius:50%; left:0; top:7px; }
+.jar-results { border-top:1px solid #48424f; margin-top:20px; padding-top:17px; }
+.jar-list-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+.jar-list-heading h2 { font-size:13px; font-weight:600; margin:0; }
+.jar-link { border:0; background:transparent; color:#c7afea; font:inherit; font-size:12px; padding:5px 0; cursor:pointer; }
+.jar-link:hover { text-decoration:underline; }
+.jar-list { max-height:260px; overflow-y:auto; margin-top:12px; display:grid; gap:6px; }
+.jar-character { display:flex; width:100%; gap:12px; align-items:center; text-align:left; padding:10px; color:inherit; background:#303039; border:1px solid transparent; border-radius:9px; cursor:pointer; }
+.jar-character:hover,.jar-character[aria-pressed=true] { border-color:#a58bca; background:#3a3343; }
+.jar-monogram { display:grid; place-items:center; width:38px; height:42px; background:#4c405f; border-radius:6px; color:#dfceef; flex-shrink:0; }
+.jar-character-text { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
+.jar-character strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; }
+.jar-character small { font-size:11px; color:#aaa2b7; }
+.jar-chevron { color:#b9a5ce; font-size:22px; }
+.jar-preview { border:1px solid #5b4c69; background:#2d2933; border-radius:12px; padding:18px; margin-bottom:20px; }
+.jar-preview-top { display:flex; gap:16px; align-items:center; margin-bottom:18px; }
+.jar-preview-top h2 { margin:0; font-size:21px; line-height:1.3; }
+.jar-preview-top p { margin:7px 0 0; }
+.jar-portrait { width:72px; height:90px; border-radius:8px; display:grid; place-items:center; flex-shrink:0; overflow:hidden; background:#4c3c5e; color:#e2c9ff; font-size:28px; }
+.jar-portrait img { width:100%; height:100%; object-fit:cover; }
+.jar-card-fields details { border-top:1px solid #494150; padding:12px 0; }
+.jar-card-fields summary { font-size:12px; font-weight:600; cursor:pointer; color:#ddd0e9; }
+.jar-card-fields p { font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.75; color:#bbb2c7; margin:10px 0 0; max-height:240px; overflow-y:auto; }
+.jar-warning { color:#e7c692; font-size:12px; line-height:1.65; }
+.jar-checkbox { display:flex; gap:9px; align-items:center; color:#dac8ee; font-size:12px; padding:12px 0 0; }
+.jar-checkbox input { accent-color:#b9a0e8; }
+.jar-drop { text-align:center; border:1px dashed #736180; border-radius:12px; background:#2f2b37; padding:28px 18px; }
+.jar-drop h2 { font-size:18px; margin:8px 0; }
+.jar-drop-icon { font-size:27px; color:#c6a9ea; }
+.jar-dragging { border-color:#dcbdff; background:#44354f; }
+.jar-file-name { color:#c1afcf; font-size:12px; overflow-wrap:anywhere; margin:14px 0 0; }
+.jar-status { font-size:12px; line-height:1.7; color:#b8afc5; margin:16px 0; min-height:20px; }
+.jar-status[data-tone=error] { color:#edb2b9; }.jar-status[data-tone=warning] { color:#e7c692; }.jar-status[data-tone=success] { color:#b7d9be; }
+.jar-actions { display:flex; gap:14px; justify-content:flex-end; align-items:center; border-top:1px solid #48424f; padding-top:18px; flex-wrap:wrap; }
+.jar-actions>.jar-link:first-child { margin-right:auto; }
+.jar-success { border:1px solid #526c55; background:#2c382e; padding:14px; display:flex; justify-content:space-between; gap:12px; align-items:center; border-radius:9px; margin-bottom:16px; font-size:13px; }
+.jar-footer { font-size:11px; text-align:center; margin-top:18px; }
+.jar-history-heading { font-size:21px; line-height:1.3; margin:0 0 10px; color:#eee5f5; letter-spacing:-.02em; }
+.jar-history-sources { display:flex; gap:20px; margin:18px 0; border-bottom:1px solid #494150; }
+.jar-history-sources .jar-link { padding:8px 0; border-bottom:2px solid transparent; }
+.jar-history-sources .jar-link[aria-pressed=true] { color:#eee0fb; border-color:#b9a0e8; }
+.jar-history .jar-connect { margin-top:12px; }.jar-history .jar-status { margin-top:20px; }
+.jar-conversations { display:grid; gap:8px; margin:16px 0; }
+.jar-conversation { display:flex; gap:12px; justify-content:space-between; align-items:center; padding:12px; border:1px solid #514657; border-radius:9px; background:#302b37; }
+.jar-conversation>div { display:flex; flex-direction:column; gap:5px; min-width:0; }.jar-conversation strong { font-size:12px; overflow-wrap:anywhere; }
+.jar-fetch-note { border-left:2px solid #9473bd; padding-left:10px; }
+.jar-chat-review { border:1px solid #61516d; padding:16px; border-radius:10px; margin:20px 0; background:#2e2934; }
+.jar-chat-excerpts { display:grid; gap:10px; max-height:370px; overflow-y:auto; margin-top:14px; }
+.jar-chat-line { background:#3b3245; border:1px solid #51455e; border-radius:8px; padding:12px; }
+.jar-chat-user { background:#34343e; border-color:#4d4b58; }.jar-chat-line strong { color:#d8c1ec; font-size:12px; }
+.jar-chat-line p { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.7; color:#c4bacc; margin:7px 0 0; }
+.jar-destination { border-top:1px solid #494150; padding-top:16px; margin-top:22px; }
+.jar-destination h3 { font-size:13px; font-weight:600; margin:0 0 14px; }
+.jar-character-page { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+@media(max-width:520px) { .jar-shell { padding:24px 16px; }.jar-connect { flex-direction:column; align-items:stretch; }.jar-shell h1 { font-size:26px; }.jar-tab { font-size:12px; }.jar-success { flex-direction:column; align-items:flex-start; }.jar-guide{padding:16px}.jar-guide-actions{flex-direction:column;align-items:stretch}.jar-guide-actions .jar-button{white-space:normal;line-height:1.5}.jar-guide-actions .jar-link{flex-basis:auto} }
