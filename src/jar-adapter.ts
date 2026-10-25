@@ -121,9 +121,25 @@ export function toCardV2(recordValue: unknown, separationValue?: unknown): JarCa
     creator: field(source, 'creator'), character_version: field(source, 'character_version', 'characterVersion'),
     extensions: cardMetadata(object(source.extensions)) as Record<string, unknown>,
   };
+  // JAR's assembled definition omits the public catalog author. Preserve only
+  // these public identity fields, never the capture, account, or session data.
+  const meta = object(record.meta);
+  const publicCreator = string(meta.creator_name).trim();
+  const publicCreatorId = string(meta.creator_id).trim();
+  if (publicCreator) {
+    if (!data.creator.trim() || /^janitor-lorebook-extractor$/i.test(data.creator.trim())) data.creator = publicCreator;
+    const bridge = { ...object(data.extensions.jar_bridge) };
+    // Replacing public attribution must not leave an older author's identity
+    // attached to the newly-read display name. Other extension fields survive.
+    for (const key of ['creator_name', 'creatorName', 'creator_id', 'creatorId', 'creator_profile_url', 'creatorProfileUrl', 'creator_url', 'author_url', 'creator', 'author']) delete bridge[key];
+    data.extensions.jar_bridge = {
+      ...bridge, source: 'janitorai', creator_name: publicCreator,
+      ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(publicCreatorId) ? { creator_id: publicCreatorId.toLowerCase() } : {}),
+    };
+  }
   // JAR keeps JAI's optional public music attachment outside its CCv2 card.
   // Copy just the validated track ID, never the surrounding capture metadata.
-  const rawTrackId = object(record.meta).soundcloud_track_id;
+  const rawTrackId = meta.soundcloud_track_id;
   const trackId = typeof rawTrackId === 'number' && Number.isSafeInteger(rawTrackId) ? String(rawTrackId) : rawTrackId;
   if (typeof trackId === 'string' && /^[1-9]\d{0,19}$/.test(trackId)) {
     data.extensions.jar_bridge = { ...object(data.extensions.jar_bridge), soundcloud_track_id: trackId };
