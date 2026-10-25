@@ -1,0 +1,10 @@
+{
+  "name": "lumiverse-jar-bridge",
+  "version": "0.4.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/frontend.ts src/backend.ts --target browser --outdir dist --minify",
+    "test": "bun test tests"
+  }
+}
