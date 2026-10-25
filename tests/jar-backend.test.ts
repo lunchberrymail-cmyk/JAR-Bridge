@@ -142,6 +142,27 @@ describe('safe actionable JAR connection errors', () => {
 });
 
 describe('JAR character adapter', () => {
+  test('preserves the actual public creator outside JAR’s assembled definition, without leaking capture metadata', () => {
+    const creatorId = 'fcd544f1-182a-43d9-a9e1-0a1de8fe0fb9';
+    const input = { ...record(), meta: { creator_name: 'Bride4corpse', creator_id: creatorId, soundcloud_track_id: '123', creator_display_prefs: { private: 'PRIVATE' }, session_token: 'PRIVATE', description: 'PRIVATE' } };
+    const result = toCardV2(input).card.data;
+    expect(result.creator).toBe('Bride4corpse');
+    expect(result.extensions.jar_bridge).toEqual({ source: 'janitorai', creator_name: 'Bride4corpse', creator_id: creatorId, soundcloud_track_id: '123' });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+    const custom = { ...input, character: { ...input.character, creator: 'Edited Author' } };
+    expect(toCardV2(custom).card.data.creator).toBe('Edited Author');
+    const extractor = { ...input, character: { ...input.character, creator: 'janitor-lorebook-extractor' } };
+    expect(toCardV2(extractor).card.data.creator).toBe('Bride4corpse');
+    for (const creator_id of ['username', '../settings', { id: creatorId }, 12]) {
+      const data = toCardV2({ ...input, meta: { creator_name: 'Author', creator_id } }).card.data;
+      expect(data.creator).toBe('Author'); expect(data.extensions.jar_bridge).toEqual({ source: 'janitorai', creator_name: 'Author' });
+    }
+    const stale = { ...input, meta: { creator_name: 'New Author' }, character: { ...input.character, extensions: { jar_bridge: { creator_name: 'Old Author', creator_id: creatorId, creator_profile_url: `https://janitorai.com/profiles/${creatorId}`, soundcloud_track_id: '456', custom: true } } } };
+    expect(toCardV2(stale).card.data.extensions.jar_bridge).toEqual({ soundcloud_track_id: '456', custom: true, source: 'janitorai', creator_name: 'New Author' });
+    expect(stale.character.extensions.jar_bridge.creator_id).toBe(creatorId);
+    expect(toCardV2({ ...record(), meta: { creator_id: creatorId } }).card.data.creator).toBe('');
+    expect(toCardV2({ ...record(), meta: { creator_id: creatorId } }).card.data.extensions.jar_bridge).toBeUndefined();
+  });
   test('preserves only the public numeric SoundCloud attachment from JAR metadata', () => {
     const input = { ...record(), meta: { soundcloud_track_id: '1099971685', session_token: 'PRIVATE', scripts: 'PRIVATE', description: 'PRIVATE' } };
     expect(toCardV2(input).card.data.extensions.jar_bridge).toEqual({ soundcloud_track_id: '1099971685' });
