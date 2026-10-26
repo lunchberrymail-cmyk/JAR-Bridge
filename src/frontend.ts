@@ -1,4 +1,5 @@
 import type { SpindleFrontendContext, SpindleModalHandle } from 'lumiverse-spindle-types';
+import { requestPermissions } from './permissions';
 import styles from './style.css' with { type: 'text' };
 import type { JarCardResult, JarSummary } from './jar-adapter';
 import { createJarClient } from './client';
@@ -7,7 +8,7 @@ import { importNativeCard, ImportError, type ImportedCharacter } from './import-
 import { normalizeJarBase } from './transport';
 import { createChatHistory, type HistoryStart } from './chats-ui';
 import { createImportGuide } from './import-guide';
-import { parseJanitorLink, type JarLinkResult } from './janitor-link';
+import { parseJanitorLink } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
 
 const importIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>';
@@ -24,7 +25,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let returnToHistory = false;
   const importedSources = new Map<string, ImportedCharacter>();
   const uncertainSources = new Set<string>();
-  const linkResults = new Map<string, JarLinkResult>(), recordAliases = new Map<string, string>();
+  const recordAliases = new Map<string, string>();
   let pendingHistory: JarHistoryResult | undefined;
   const abort = new AbortController();
   const client = createJarClient(ctx);
@@ -192,7 +193,7 @@ export function setup(ctx: SpindleFrontendContext) {
   async function permission(permission: 'cors_proxy') {
     let granted = await ctx.permissions.getGranted();
     if (disposed) return false;
-    if (!granted.includes(permission)) granted = await ctx.permissions.request([permission], { reason: 'Read saved content or load the JanitorAI link you choose through your local JAR service. This does not send chat messages or access JAR settings.' });
+    if (!granted.includes(permission)) granted = await requestPermissions(ctx, [permission], 'Read saved content or load the JanitorAI link you choose through your local JAR service. This does not send chat messages or access JAR settings.');
     return !disposed && granted.includes(permission);
   }
   async function previewLink(carriedHistory?: JarHistoryResult) {
@@ -200,16 +201,15 @@ export function setup(ctx: SpindleFrontendContext) {
     let source: ReturnType<typeof parseJanitorLink>, endpoint: string;
     try { source = parseJanitorLink(sourceLink.value); endpoint = normalizeJarBase(address.value.trim()); }
     catch (error) { message(error instanceof Error ? error.message : 'Paste a JanitorAI character or chat link.', 'error'); return; }
-    const token = ++generation, cacheKey = `${endpoint}:${source.sourceUrl}`;
+    const token = ++generation;
     resetSelection(); busy = true; updateControls(); renderList(); message(source.kind === 'chat' ? 'JAR is loading this conversation and its character…' : 'JAR is loading this character card…');
     let historyStart: HistoryStart | undefined;
     try {
       if (!await permission('cors_proxy')) { message('Allow local JAR access to preview this link.', 'warning'); return; }
       if (disposed || token !== generation) return;
-      const result = linkResults.get(cacheKey) || await client.requestLink(endpoint, source.sourceUrl);
+      const result = await client.requestLink(endpoint, source.sourceUrl);
       if (disposed || token !== generation) return;
       if (result.sourceUrl !== source.sourceUrl || result.kind !== source.kind) throw new Error('JAR returned a different link. Nothing was imported.');
-      if (result.card || result.history) linkResults.set(cacheKey, result);
       if (result.characterUrl) {
         const alias = `janitor-character:${endpoint}:${result.characterUrl}`;
         aliasRecord(endpoint, result.recordId, alias);

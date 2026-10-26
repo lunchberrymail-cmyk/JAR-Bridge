@@ -152,7 +152,7 @@ export function toCardV2(recordValue: unknown, separationValue?: unknown): JarCa
   }
   const avatar = string(character.avatarBase64) || string(source.avatarBase64) || string(record.avatarBase64) || string(stored.avatarBase64);
   const result: JarCardResult & { id: string } = { id, recordId: id, name: data.name, card: { spec: 'chara_card_v2', spec_version: '2.0', data } };
-  if (avatar.startsWith('data:image/')) result.avatarDataUrl = avatar;
+  if (/^data:image\/(?:png|jpeg|webp);base64,/i.test(avatar)) result.avatarDataUrl = avatar;
   else if (avatar) result.warnings = ['The saved avatar is unavailable. The character card can still be imported.'];
   return result;
 }

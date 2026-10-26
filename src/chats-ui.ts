@@ -1,4 +1,6 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
+import { requestPermissions } from './permissions';
+import { contentHash } from './content-hash';
 import type { JarSummary } from './jar-adapter';
 import type { createJarClient } from './client';
 import { normalizeJarBase } from './transport';
@@ -153,7 +155,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
   targetSearch.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); characterOffset = 0; void loadCharacters(); } });
   async function allowJar() {
     let grants = await ctx.permissions.getGranted(); if (disposed || !active) return false;
-    if (!grants.includes('cors_proxy')) grants = await ctx.permissions.request(['cors_proxy'], { reason: 'Read the linked conversations you choose from JAR. Loading selected history uses JAR’s signed-in JanitorAI browser.' });
+    if (!grants.includes('cors_proxy')) grants = await requestPermissions(ctx, ['cors_proxy'], 'Read the linked conversations you choose from JAR. Loading selected history uses JAR’s signed-in JanitorAI browser.');
     return !disposed && active && grants.includes('cors_proxy');
   }
   async function loadChatLink() {
@@ -228,8 +230,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
     const token = ++epoch; target.value = ''; clearPreview(); setBusy(true); message('Reading chat history locally…');
     try {
       const chat = await parseChatFile(file); if (!valid(token)) return;
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(chat.messages))); if (!valid(token)) return;
-      const key = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      const key = await contentHash(JSON.stringify(chat.messages)); if (!valid(token)) return;
       const chatId = chat.metadata?.janitor_chat_id;
       const identity = chat.metadata?.imported_from === 'janitorai' && /^(?:[1-9]\d{0,31})$/.test(String(chatId)) ? `janitor-chat:${chatId}` : `chat-file:${key}`;
       fileLabel.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`; showPreview(chat, identity); suggestCharacter();
@@ -255,7 +256,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
   }
   async function loadCharacters() {
     if (busy || disposed || !active) return;
-    const token = ++epoch, oldTarget = target.value; setBusy(true);
+    const token = ++epoch, oldTarget = target.value, oldCharacter = characters.find(item => item.id === target.value); setBusy(true);
     try {
       const query = new URLSearchParams({ limit: '100', offset: String(characterOffset), search: targetSearch.value.trim(), sort: 'name', direction: 'asc' });
       const response = await fetch(`/api/v1/characters/summary?${query}`, { credentials: 'same-origin', signal: abort.signal });
@@ -266,6 +267,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
       characterTotal = typeof result.total === 'number' ? result.total : characters.length;
       charactersLoaded = true;
       target.replaceChildren(); const empty = el('option', '', 'Choose a character…'); empty.value = ''; target.append(empty);
+      if (oldCharacter && !characters.some(item => item.id === oldTarget)) characters.push(oldCharacter);
       for (const character of characters) { const option = el('option', '', character.name); option.value = character.id; target.append(option); }
       if (characters.some(item => item.id === oldTarget)) target.value = oldTarget; else suggestCharacter();
       characterPage.hidden = characterTotal <= 100; pageLabel.textContent = characterTotal ? `${characterOffset + 1}–${Math.min(characterOffset + 100, characterTotal)} of ${characterTotal}` : 'No characters found';

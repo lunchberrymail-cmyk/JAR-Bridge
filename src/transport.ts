@@ -59,6 +59,7 @@ function knownJarError(response: Record<string, unknown>, route: JarRoute): stri
 
 function connectionError(error: unknown): string {
   const detail = (error instanceof Error ? `${error.name}: ${error.message}` : typeof error === 'string' ? error : '').slice(0, 2048);
+  if (/response too large/i.test(detail)) return `This JAR response is too large for the connection. ${HISTORY_FILE_HELP}`;
   if (/timed?\s*out|timeout/i.test(detail)) return `JAR did not finish within Lumiverse’s connection time limit. Wait for JAR’s browser to finish, then try again. ${HISTORY_FILE_HELP}`;
   if (/\babort(?:ed|error)?\b/i.test(detail)) return `The connection to JAR was interrupted. Wait for JAR’s browser to finish, then retry. ${HISTORY_FILE_HELP}`;
   return 'Could not reach JAR. Start JAR on the Lumiverse server computer and check its local address.';

@@ -1,4 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
+import { requestPermissions } from './permissions';
 
 export type ImportedCharacter = { id: string; name: string; image_id?: string };
 export class ImportError extends Error {
@@ -18,7 +19,7 @@ export async function importNativeCard(
   let granted = await ctx.permissions.getGranted();
   if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
   if (!granted.includes('characters')) {
-    granted = await ctx.permissions.request(['characters'], { reason: 'Import the character card you selected into your normal Lumiverse library.' });
+    granted = await requestPermissions(ctx, ['characters'], 'Import the character card you selected into your normal Lumiverse library.');
     if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
     if (!granted.includes('characters')) throw new ImportError('Allow Characters to import this card.');
   }

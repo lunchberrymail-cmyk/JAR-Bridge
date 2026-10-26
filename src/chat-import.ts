@@ -1,4 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types'
+import { requestPermissions } from './permissions'
 
 /** Native migration shape. Every timestamp is UNIX seconds. */
 export interface NativeChatMessage {
@@ -98,13 +99,13 @@ export async function importNativeChat(
   let granted = await ctx.permissions.getGranted()
   if (!active()) cancelled()
   if (!granted.includes('chats')) {
-    granted = await ctx.permissions.request(['chats'], { reason: 'Import the conversation you reviewed as a normal Lumiverse chat for the character you selected.' })
+    granted = await requestPermissions(ctx, ['chats'], 'Import the conversation you reviewed as a normal Lumiverse chat for the character you selected.')
     if (!active()) cancelled()
     if (!granted.includes('chats')) throw new ChatImportError('Allow Chats to import this conversation.')
   }
   const body = JSON.stringify({ character_id: characterId, chats: [chat] })
   if (new TextEncoder().encode(body).byteLength > MAX_CHAT_REQUEST_BYTES) {
-    throw new ChatImportError('This conversation is larger than Lumiverse’s 10 MiB import limit. Choose a smaller conversation export.')
+    throw new ChatImportError('This conversation exceeds JAR Bridge’s 10 MiB import limit. Choose a smaller conversation export.')
   }
   // Permission prompts and serialization can take time. Recheck immediately
   // before the one durable write, using the captured source and character.

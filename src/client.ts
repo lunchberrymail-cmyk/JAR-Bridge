@@ -1,4 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
+import { uuid } from './uuid';
 import { isRecordId, type JarLinkResult, type JarRequest, type JarResponse } from './jar-adapter';
 import { parseJanitorLink, type JanitorLink } from './janitor-link';
 
@@ -76,8 +77,7 @@ export function createJarClient(ctx: Context): {
   cancel(): void;
   dispose(): void;
 } {
-  const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const nonce = uuid();
   const prefix = `jar-${++clientSequence}-${nonce}`;
   let sequence = 0;
   let active: Pending | undefined;
