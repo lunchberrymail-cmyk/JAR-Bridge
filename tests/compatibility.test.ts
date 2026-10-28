@@ -40,6 +40,28 @@ test('host response-size rejection recommends the file route without exposing ho
   await expect(request({kind:'history',chatId:'31415'})).rejects.toThrow('response is too large');
 });
 
+test('refused local connections explain how to start JAR and keep its server running', async () => {
+  for (const detail of ['connect ECONNREFUSED PRIVATE', 'Unable to connect. PRIVATE', 'FailedToOpenSocket PRIVATE']) {
+    const request = createJarTransport({ permissions: { getGranted: async () => ['cors_proxy'] }, cors: async () => { throw new Error(detail); } } as any, 'http://localhost:4577', { current: () => true });
+    try { await request({ kind: 'version' }); throw new Error('Expected refusal'); }
+    catch (error) {
+      const message = String(error);
+      expect(message).toContain('not accepting connections'); expect(message).toContain('start.bat');
+      expect(message).toContain('keep its console open'); expect(message).not.toContain('PRIVATE');
+    }
+  }
+});
+
+test('fresh JAR browser setup failures are distinguished from an unreachable server', async () => {
+  const request = createJarTransport({ permissions: { getGranted: async () => ['cors_proxy'] }, cors: async () => ({ status: 500, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ error: "browserType.launchPersistentContext: Executable doesn't exist at PRIVATE_PROFILE. Please run playwright install" }) }) } as any, 'http://localhost:4577', { current: () => true });
+  try { await request({ kind: 'inspect', sourceUrl: 'https://janitorai.com/characters/11111111-2222-3333-4444-555555555555' }); throw new Error('Expected missing browser'); }
+  catch (error) {
+    const message = String(error);
+    expect(message).toContain('JAR is running'); expect(message).toContain('npx.cmd playwright install chromium');
+    expect(message).not.toContain('PRIVATE_PROFILE');
+  }
+});
+
 test('unsupported avatar formats are omitted with a warning before preview and import', () => {
   for (const type of ['gif', 'svg+xml', 'avif']) {
     const card = toCardV2({ id: 'record-1', character: { name: 'Character', description: 'Definition', avatarBase64: `data:image/${type};base64,AAAA` } });

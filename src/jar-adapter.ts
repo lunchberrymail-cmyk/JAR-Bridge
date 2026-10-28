@@ -40,14 +40,14 @@ export interface JarLinkResult {
   history?: JarHistoryResult;
   warning?: string;
 }
-export type JarCommand = 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link' | 'cancel';
+export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
 }
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;
-  result?: { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult;
+  result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult;
   error?: string;
 }
 

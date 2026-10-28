@@ -60,7 +60,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const addressField = el('label', 'jar-field'); addressField.htmlFor = 'jar-address';
   const address = el('input', 'jar-input'); address.id = 'jar-address'; address.type = 'url'; address.value = 'http://127.0.0.1:4577'; address.autocomplete = 'off'; address.spellcheck = false;
   addressField.append(el('span', 'jar-label', 'Local JAR address'), address);
-  const connect = button('Connect to JAR', () => { void load(true); }, 'jar-button jar-primary');
+  const connect = button('Check JAR connection', () => { void checkConnection(); }, 'jar-button jar-primary');
   const openJar = el('a', 'jar-button', 'Open JAR'); openJar.target = '_blank'; openJar.rel = 'noopener noreferrer'; openJar.href = normalizeJarBase(address.value);
   openJar.addEventListener('click', event => { try { openJar.href = normalizeJarBase(address.value); } catch { event.preventDefault(); message('Enter JAR’s local address before opening it.', 'warning'); } });
   const connectionRow = el('div', 'jar-connect'); connectionRow.append(connect, openJar);
@@ -73,9 +73,17 @@ export function setup(ctx: SpindleFrontendContext) {
   const sourceRow = el('div', 'jar-connect'); sourceRow.append(sourceField, loadLink);
   linkPanel.append(sourceRow, el('p', 'jar-help', 'JAR must be running and signed in on the computer hosting Lumiverse. Phone or tablet without JAR? Use a downloaded card file; the Help guide explains how.'));
   const advancedAddress = el('details', 'jar-address-details'); advancedAddress.append(el('summary', '', 'Change JAR address'), addressField);
-  const connectionHint = el('p', 'jar-help', 'Connect to browse cards already stored by your running JAR.');
+  const connectionHint = el('p', 'jar-help', 'Load cards already stored by this copy of JAR. A fresh download may have no saved cards yet.');
   const openJarHint = el('p', 'jar-help', 'Using Lumiverse from another device? Connect still reads JAR on the server computer. Open JAR’s 127.0.0.1 link on that computer; the link opens the device you are currently using.');
-  const connectedLabel = el('p', 'jar-connection-state', 'Not connected');
+  const connectedLabel = el('p', 'jar-connection-state', 'Connection not checked'); connectedLabel.setAttribute('role', 'status');
+  const connectionHelp = el('details', 'jar-address-details jar-connection-help');
+  connectionHelp.append(el('summary', '', 'JAR won’t connect?'),
+    el('p', 'jar-help', 'On Windows, open start.bat in the fully extracted JAR folder containing package.json. On macOS or Linux, run npm start there. Keep the console open; closing it stops JAR even if its browser tab is still open.'),
+    el('p', 'jar-help', 'Run JAR on the same computer as the Lumiverse server. If Lumiverse runs on another computer or in Docker, its local address does not reach JAR on your browsing device. Use a card or history file if you cannot run both together.'),
+    el('p', 'jar-help', 'Use the port shown in JAR’s console. Once the connection check succeeds, use JAR’s Log in button before loading JanitorAI links. A newly extracted copy has its own login session and saved-card folder.'));
+  const connectionPanel = el('section', 'jar-connection-panel'); connectionPanel.setAttribute('aria-label', 'Local JAR connection');
+  connectionPanel.append(connectionRow, connectedLabel, el('p', 'jar-help', 'Checks whether JAR is running. No JanitorAI login or saved cards are needed for this check.'), advancedAddress, connectionHelp);
+  const loadSaved = button('Load saved cards', () => { void load(true); });
   const continueHistory = button('Continue to chat history →', () => switchMode('history'), 'jar-button jar-primary'); continueHistory.hidden = true;
   const results = el('section', 'jar-results'); results.hidden = true;
   const listHeading = el('div', 'jar-list-heading');
@@ -87,7 +95,7 @@ export function setup(ctx: SpindleFrontendContext) {
   search.addEventListener('input', renderList);
   results.append(listHeading, search, list);
   const savedArchive = el('details', 'jar-saved-details');
-  savedArchive.append(el('summary', '', 'Cards already saved in JAR'), connectionHint, connectionRow, connectedLabel, continueHistory, results, advancedAddress);
+  savedArchive.append(el('summary', '', 'Cards already saved in JAR'), connectionHint, loadSaved, continueHistory, results);
   advancedAddress.append(openJarHint);
   archivePanel.append(linkPanel, savedArchive);
 
@@ -137,7 +145,7 @@ export function setup(ctx: SpindleFrontendContext) {
   });
   const guide = createImportGuide({ start: next => switchMode(next) });
   historyPanel.append(chatHistory.root);
-  root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, archivePanel, filePanel, historyPanel, preview, status, success, actions); tab.root.append(root);
+  root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions); tab.root.append(root);
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = guideVisible || mode === 'history' || !text; }
   async function navigate(target: { kind: 'drawer_tab' | 'route'; id: string }, params?: Record<string, string>) {
@@ -155,7 +163,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function restoreOutcome() { const key = sourceKey(); imported = importedSources.get(key); uncertain = uncertainSources.has(key); }
   function updateControls() {
     if (disposed) return;
-    for (const node of [address, connect, refresh, search, choose, fileInput, archiveTab, fileTab, historyTab, noAvatarInput, sourceLink]) node.disabled = busy;
+    for (const node of [address, connect, loadSaved, refresh, search, choose, fileInput, archiveTab, fileTab, historyTab, noAvatarInput, sourceLink]) node.disabled = busy;
     loadLink.disabled = busy || !sourceLink.value.trim();
     useExisting.hidden = !pendingHistory; useExisting.disabled = busy;
     retry.hidden = !uncertain; retry.disabled = busy;
@@ -164,6 +172,7 @@ export function setup(ctx: SpindleFrontendContext) {
     success.hidden = guideVisible || mode === 'history' || !imported; successText.textContent = imported ? `${imported.name} is in your library.` : '';
     nextHistory.disabled = busy; backToGuide.disabled = busy; closeGuide.disabled = busy; guide.setBusy(busy);
     guide.root.hidden = !guideVisible; backToGuide.hidden = guideVisible; closeGuide.hidden = !guideVisible; tabs.hidden = guideVisible;
+    connectionPanel.hidden = guideVisible || mode !== 'archive';
     eyebrow.hidden = guideVisible; heading.hidden = guideVisible; intro.hidden = guideVisible;
     archivePanel.hidden = guideVisible || mode !== 'archive'; filePanel.hidden = guideVisible || mode !== 'file'; historyPanel.hidden = guideVisible || mode !== 'history';
     actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile); status.hidden = guideVisible || mode === 'history' || !status.textContent;
@@ -231,6 +240,24 @@ export function setup(ctx: SpindleFrontendContext) {
       else status.scrollIntoView?.({ block: 'nearest', behavior: 'auto' });
     }
   }
+  async function checkConnection() {
+    if (disposed || busy) return;
+    const token = ++generation; busy = true; updateControls(); message('Checking your local JAR…');
+    try {
+      if (!await permission('cors_proxy')) { message('Allow local JAR access to check the connection.', 'warning'); return; }
+      if (disposed || token !== generation) return;
+      const result = object(await client.request('check', address.value.trim()));
+      if (disposed || token !== generation) return;
+      connectedLabel.textContent = `JAR ${result.version} is running · ${normalizeJarBase(address.value)}`;
+      connectionHelp.open = false;
+      message('JAR is reachable. To load JanitorAI links, sign in using JAR’s Log in button first.');
+    } catch (error) {
+      if (!disposed && token === generation && !isAbort(error)) {
+        connected = false; connectedLabel.textContent = 'JAR connection could not be confirmed'; connectionHelp.open = true;
+        message(error instanceof Error ? error.message : 'Could not reach JAR. Start it and keep its console open.', 'error');
+      }
+    } finally { if (!disposed && token === generation) { busy = false; updateControls(); } }
+  }
   async function load(first: boolean) {
     if (disposed || busy) return;
     const token = ++generation; resetSelection(); busy = true; updateControls(); message('Connecting to your local JAR…');
@@ -242,8 +269,9 @@ export function setup(ctx: SpindleFrontendContext) {
       if (!Array.isArray(result.captures)) throw new Error('JAR returned an unreadable character list.');
       captures = result.captures as JarSummary[]; connected = true;
       connectedLabel.textContent = typeof result.version === 'string' ? `Connected · JAR ${result.version}` : 'Connected to JAR';
-      results.hidden = false; renderList(); message(captures.length ? 'Choose a character to preview.' : 'No saved cards yet. Finish a character in JAR, then refresh.');
-    } catch (error) { if (!isAbort(error)) { connected = false; captures = []; results.hidden = true; connectedLabel.textContent = 'Not connected'; message(error instanceof Error ? error.message : 'Could not connect to JAR.', 'error'); } }
+      connectionHelp.open = false;
+      results.hidden = false; renderList(); message(captures.length ? 'Choose a character to preview.' : 'JAR is running. This copy has no saved cards yet. Paste a JanitorAI link to load a character, or choose Import card file.');
+    } catch (error) { if (!isAbort(error)) { connected = false; captures = []; results.hidden = true; connectedLabel.textContent = 'Could not load saved JAR cards'; connectionHelp.open = true; message(error instanceof Error ? error.message : 'Could not connect to JAR.', 'error'); } }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
   }
   address.addEventListener('input', () => { if (busy) return; generation++; client.cancel(); connected = false; captures = []; results.hidden = true; connectedLabel.textContent = 'Not connected'; resetSelection(); message('Connect to the new local address to load its saved characters.'); updateControls(); });

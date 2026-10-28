@@ -210,6 +210,18 @@ describe('JAR character adapter', () => {
 });
 
 describe('JAR backend account, permission and session boundaries', () => {
+  test('connection checks read only the version, without opening JAR’s browser or requiring saved cards', async () => {
+    const f = fixture(); f.send({ id: 'check-1', command: 'check', baseUrl: 'http://localhost:4577' }); await wait();
+    expect(f.calls.map(call => call.url)).toEqual(['http://127.0.0.1:4577/api/version']);
+    expect(f.replies).toEqual([{ payload: { type: 'jar_bridge:response', id: 'check-1', command: 'check', result: { version: '0.4.0' } }, userId: 'owner', options: { frontendSessionId: 'tab-one' } }]);
+  });
+  test('connection checks preserve the account and permission requirements', async () => {
+    for (const options of [{ pin: null }, { granted: async () => [] }]) {
+      const f = fixture(options); f.send({ id: 'check-denied', command: 'check' }); await wait();
+      expect(f.calls).toHaveLength(0); expect(f.replies[0].payload.error).toBeTruthy();
+      expect(f.replies[0].payload.result).toBeUndefined();
+    }
+  });
   test('connect returns normalized summaries solely to the trusted originating document', async () => {
     const f = fixture(); f.send({ id: 'connect-1', command: 'connect', baseUrl: 'http://localhost:4577', userId: 'forged', frontendSessionId: 'forged' }); await wait();
     expect(f.calls).toHaveLength(2); expect(f.replies).toEqual([{ payload: { type: 'jar_bridge:response', id: 'connect-1', command: 'connect', result: { version: '0.4.0', captures: [{ id: '123-abc', name: 'Test', source: 'inspect', ts: 10 }] } }, userId: 'owner', options: { frontendSessionId: 'tab-one' } }]);

@@ -85,7 +85,7 @@ describe('JAR frontend requests settle only their own active response', () => {
     const client = setup(); const error = rejected(client.request('list', 'local')); const request = sent[0];
     expect([...timers.values()].map(timer => timer.delay)).toEqual([90_000]);
     [...timers.values()][0].callback();
-    expect((await error).message).toContain('too long'); expect(timers.size).toBe(0);
+    expect((await error).message).toContain('JAR Bridge did not reply'); expect((await error).message).toContain('Reload the extension'); expect(timers.size).toBe(0);
     expect(sent[1]).toEqual({ type: 'jar_bridge:request', command: 'cancel', id: request.id });
     reply(request, { captures: [] }); expect(sent).toHaveLength(2);
   });

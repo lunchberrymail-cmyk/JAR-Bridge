@@ -39,6 +39,7 @@ function errorMessage(value: string): string {
 function isResult(value: unknown, pending: Pending): value is NonNullable<Result> {
   const result = object(value);
   if (!result) return false;
+  if (pending.command === 'check') return typeof result.version === 'string' && !!result.version && result.version.length <= 120;
   if (pending.command === 'connect') return typeof result.version === 'string' && !!result.version && Array.isArray(result.captures);
   if (pending.command === 'list') return Array.isArray(result.captures);
   if (pending.command === 'conversations') return result.recordId === pending.recordId && typeof result.characterName === 'string' && Array.isArray(result.conversations);
@@ -130,7 +131,7 @@ export function createJarClient(ctx: Context): {
           id: `${prefix}-${++sequence}`, command, recordId, chatId, link, resolve, reject,
           timer: setTimeout(() => {
             if (!detach(pending)) return;
-            reject(new Error('JAR took too long to respond. Check JAR, then try again.'));
+            reject(new Error('JAR Bridge did not reply. Reload the extension in Lumiverse, then check the JAR connection again.'));
             sendCancel(pending);
           }, TIMEOUT_MS),
         };

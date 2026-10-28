@@ -48,7 +48,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
       return;
     }
     const command = request.command;
-    if (command !== 'connect' && command !== 'list' && command !== 'card' && command !== 'conversations' && command !== 'history' && command !== 'preview-link') return;
+    if (command !== 'check' && command !== 'connect' && command !== 'list' && command !== 'card' && command !== 'conversations' && command !== 'history' && command !== 'preview-link') return;
     const prior = jobs.get(owner);
     if (prior) { prior.cancelled = true; clearTimeout(prior.timer); binding.cancel(userId, frontendSessionId, prior.id); }
     const reply = (data: Pick<JarResponse, 'result' | 'error'>) => {
@@ -147,11 +147,16 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             result = card;
           }
         } else {
-          const version = command === 'connect' ? object(await get({ kind: 'version' })).version : undefined;
+          const version = command === 'connect' || command === 'check' ? object(await get({ kind: 'version' })).version : undefined;
           if (!current()) return;
-          if (command === 'connect' && (typeof version !== 'string' || !version || version.length > 120)) throw new Error('This address did not return a JAR version. Check the local JAR address.');
-          const captures = normalizeSummaries(await get({ kind: 'captures' }));
-          result = command === 'connect' ? { version: version as string, captures } : { captures };
+          if ((command === 'connect' || command === 'check') && (typeof version !== 'string' || !version || version.length > 120)) throw new Error('This address did not return a JAR version. Check the local JAR address.');
+          // A fresh JAR needs neither a signed-in browser nor saved cards for a
+          // connection check. Keep archive loading as a separate explicit action.
+          if (command === 'check') result = { version: version as string };
+          else {
+            const captures = normalizeSummaries(await get({ kind: 'captures' }));
+            result = command === 'connect' ? { version: version as string, captures } : { captures };
+          }
         }
         if (!current()) return;
         if (!await isPinnedOwner(api, userId)) throw new Error('This JAR bridge is no longer linked to your Lumiverse account.');

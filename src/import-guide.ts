@@ -83,7 +83,7 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
     list([
       'Get JAR from its GitHub page: Code → Download ZIP. Extract the ZIP completely, then open the extracted project folder containing package.json. If start.bat is supplied, it belongs in that same folder. Do not run JAR from inside the ZIP.',
       'On Windows, double-click start.bat when it is supplied. Give setup time and keep the console window open. If the launcher is missing or stops with an error, open “JAR will not start on Windows” below.',
-      'Once the console shows JAR’s local address, open http://127.0.0.1:4577 if the page does not open for you. Startup has worked when you see JAR’s page with its “paste character URL…” field. Keep both JAR and Lumiverse open.',
+      'Once the console shows JAR’s local address, open http://127.0.0.1:4577 if the page does not open for you. In this importer, choose Check JAR connection to confirm the server is running. Keep its console open; an open browser tab alone does not keep JAR running.',
     ]));
   const download = el('p', 'jar-help'); download.append(link('Get JAR · official download and setup', 'https://github.com/alpha-omicron/JAR')); sections[1].append(download);
   sections[1].append(el('p', 'jar-help jar-guide-note', 'Run JAR on the same computer as the Lumiverse server. On macOS or Linux, follow JAR’s requirements and run npm start.'), el('p', 'jar-help', 'Viewing Lumiverse on a phone while JAR is already running on its host computer? You can still load links here. Open JAR’s own interface on that computer: a 127.0.0.1 link opens the device you are viewing it on.'));
@@ -99,7 +99,7 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
     el('p', 'jar-help', 'A missing package.json means the terminal is in the wrong folder. “node” or “npm.cmd” not recognized means Node.js is not installed or the terminal needs reopening. Keep the console open and read the first error if startup still fails.'));
   sections[1].append(startupHelp);
 
-  sections[2].append(el('p', 'jar-help', 'JAR uses its own browser to read your selected conversation. Being signed into JanitorAI in your usual browser is not enough.'),
+  sections[2].append(el('p', 'jar-help', 'JAR uses its own browser to read your selected conversation. Being signed into JanitorAI in your usual browser is not enough. A newly extracted JAR copy has its own login session and saved-card folder. Connection checks work before signing in.'),
     list([
       'In JAR’s top bar, click log in (🔓).',
       'A separate browser opens. Sign into JanitorAI there, then return to this Lumiverse importer.',

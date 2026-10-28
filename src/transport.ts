@@ -41,6 +41,9 @@ function knownJarError(response: Record<string, unknown>, route: JarRoute): stri
   try { raw = JSON.parse(response.body); } catch { return; }
   const detail = object(raw).error;
   if (typeof detail !== 'string' || detail.length > 2048) return;
+  if (/executable\s+(?:doesn.t|does not)\s+exist|playwright\s+install|browser\s+(?:executable\s+)?(?:not found|is missing)/i.test(detail)) {
+    return 'JAR is running, but its Chromium browser is missing. In the extracted JAR folder, run npx.cmd playwright install chromium on Windows (npx playwright install chromium on macOS or Linux), restart JAR, then sign in using JAR’s Log in button.';
+  }
   if (/\bnot\s+(?:logged|signed)\s+in(?:to)?\b|\b(?:log[ -]?in|sign[ -]?in)\s+(?:first|required)\b|\bsession\s+(?:expired|unauthenticated)\b|\bunauthorized\b|\bfetch\s+(?:chat|character)\s+failed:\s*HTTP\s+401\b/i.test(detail)) {
     return 'JAR is not signed into JanitorAI, or its session has expired. Open JAR on the Lumiverse server computer, use its Log in button, then retry this import.';
   }
@@ -62,7 +65,10 @@ function connectionError(error: unknown): string {
   if (/response too large/i.test(detail)) return `This JAR response is too large for the connection. ${HISTORY_FILE_HELP}`;
   if (/timed?\s*out|timeout/i.test(detail)) return `JAR did not finish within Lumiverse’s connection time limit. Wait for JAR’s browser to finish, then try again. ${HISTORY_FILE_HELP}`;
   if (/\babort(?:ed|error)?\b/i.test(detail)) return `The connection to JAR was interrupted. Wait for JAR’s browser to finish, then retry. ${HISTORY_FILE_HELP}`;
-  return 'Could not reach JAR. Start JAR on the Lumiverse server computer and check its local address.';
+  if (/ECONNREFUSED|FailedToOpenSocket|connection\s+(?:was\s+)?refused|unable to connect/i.test(detail)) {
+    return 'JAR is not accepting connections at this local address. On the Lumiverse server computer, open start.bat in the extracted JAR folder (or run npm start), keep its console open, then check the connection again. Use the port printed in that console.';
+  }
+  return 'Could not reach JAR. On the Lumiverse server computer, start JAR from its extracted folder and keep its console open. Check the local address and port, then try again.';
 }
 
 /** Native cors follows redirects. This bridge trusts the user's local JAR service. */

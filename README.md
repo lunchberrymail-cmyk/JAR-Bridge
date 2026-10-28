@@ -37,6 +37,10 @@ Open **JAR Import** in Lumiverse's sidebar, or use Janiverse's import banner. Th
 4. In JAR, choose **log in**. Sign into JanitorAI in the separate browser it opens. Being signed into JanitorAI in your usual browser is not enough.
 5. Return to Lumiverse. You can paste links and finish the transfer here; you do not need to prepare or link them in JAR's window first.
 
+Use **Check JAR connection** in the importer to verify that JAR is running. This checks its version only; it does not open JAR's browser, require a JanitorAI login, or read saved cards. **Load saved cards** is a separate action. An empty archive in a fresh download is a successful connection.
+
+Keep JAR's console open. Closing it stops the server even if its browser tab remains open. A newly extracted JAR folder has its own login session and saved-card folder; sign in using that copy's **Log in** button before loading JanitorAI links.
+
 For manual Windows startup, install Node.js LTS, open a terminal in the extracted JAR folder containing `package.json`, then run these commands in order:
 
 ```powershell
@@ -69,7 +73,9 @@ These sites are not presented as a way to retrieve your private chat history. Fo
 
 ## If something does not load
 
-- **JAR cannot connect:** keep JAR running on the Lumiverse server computer and check its local address.
+- **JAR cannot connect:** choose **Check JAR connection**. Open `start.bat` in the extracted JAR folder on Windows, or run `npm start`, and keep its console open on the Lumiverse server computer. Match the port printed there using **Change JAR address**. **JAR won't connect?** opens automatically after a failed connection check.
+- **JAR runs on a different computer or outside Lumiverse's Docker container:** loopback points to the Lumiverse server/container. Running JAR on your browsing device does not make it reachable there. Run both in a supported local environment or import card/history files.
+- **JAR is running but Chromium is missing:** run `npx.cmd playwright install chromium` in the extracted JAR folder on Windows (`npx playwright install chromium` on macOS/Linux), restart JAR, then sign in through its **Log in** button.
 - **Sign-in expired:** use JAR's **log in** browser, then retry in Lumiverse.
 - **JAR's browser is busy:** let its current operation finish before retrying.
 - **A chat works in JAR but not here:** download it from JAR as JSON or SillyTavern JSONL, then choose **Chat history → History file**. Lumiverse limits each proxied request to 30 seconds.
