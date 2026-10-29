@@ -5,9 +5,14 @@ const PIN_FILE = 'installation.json';
 const PROOF_TTL_MS = 10_000;
 type Request = { userId: string; sessionId: string; id: string; command: string; current(): boolean };
 type Proof = Request & { nonce: string; expires: number; timer: ReturnType<typeof setTimeout>; settle(value: boolean): void };
-type PinState = 'missing' | 'valid' | 'invalid';
+/** `stale`: the same owner's pin from an earlier installation of this extension. */
+type PinState = 'missing' | 'valid' | 'stale' | 'invalid';
 
-/** A missing pin is different from an unreadable, malformed, or mismatched pin. */
+/**
+ * A missing pin is different from an unreadable, malformed, or mismatched pin.
+ * Lumiverse keeps a personal installation's storage when it is removed, and a
+ * reinstall gets a new installation ID, so the owner's old pin becomes `stale`.
+ */
 async function pinState(api: SpindleAPI, userId: string): Promise<PinState> {
   let raw: string;
   try { raw = await api.storage.read(PIN_FILE); }
@@ -18,8 +23,8 @@ async function pinState(api: SpindleAPI, userId: string): Promise<PinState> {
   if (typeof raw !== 'string' || raw.length > 4096) return 'invalid';
   try {
     const pin = object(JSON.parse(raw));
-    return pin.schemaVersion === 1 && pin.ownerUserId === userId && typeof pin.installationId === 'string'
-      && !!pin.installationId && pin.installationId === api.host.extensionInstallationId ? 'valid' : 'invalid';
+    if (pin.schemaVersion !== 1 || pin.ownerUserId !== userId || typeof pin.installationId !== 'string' || !pin.installationId) return 'invalid';
+    return pin.installationId === api.host.extensionInstallationId ? 'valid' : 'stale';
   } catch { return 'invalid'; }
 }
 
@@ -62,7 +67,8 @@ export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: numb
     const state = await pinState(api, request.userId);
     if (!active()) return false;
     if (state === 'valid') return true;
-    if (state !== 'missing' || typeof api.users?.getRole !== 'function' || typeof api.storage.write !== 'function'
+    // A stale pin is re-proved exactly like a missing one; another owner's pin never is.
+    if ((state !== 'missing' && state !== 'stale') || typeof api.users?.getRole !== 'function' || typeof api.storage.write !== 'function'
       || typeof api.sendToFrontend !== 'function' || typeof globalThis.crypto?.getRandomValues !== 'function'
       || !(api.host.capabilities['frontend-session-routing-v1'] >= 1)
       || typeof api.host.extensionInstallationId !== 'string' || !api.host.extensionInstallationId) return false;
@@ -87,7 +93,7 @@ export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: numb
     if (!proved || !active()) return false;
     // An established binding can never be replaced by an incoming document.
     const latest = await pinState(api, request.userId);
-    if (!active() || latest === 'invalid') return false;
+    if (!active() || latest === 'invalid' || (latest === 'stale' && state !== 'stale')) return false;
     if (latest === 'valid') return true;
     try {
       await api.storage.write(PIN_FILE, JSON.stringify({ schemaVersion: 1, ownerUserId: request.userId, installationId: api.host.extensionInstallationId }));

@@ -12,7 +12,11 @@ const rotate = (value: number, bits: number) => (value >>> bits) | (value << (32
 
 /** Stable SHA-256 identity on both HTTPS and LAN HTTP, without file-metadata collisions. */
 export async function contentHash(text: string): Promise<string> {
-  const input = new TextEncoder().encode(text);
+  return bytesHash(new TextEncoder().encode(text));
+}
+
+/** The same SHA-256 identity for raw bytes, such as a chosen card file. */
+export async function bytesHash(input: Uint8Array): Promise<string> {
   if (globalThis.crypto?.subtle) {
     const digest = await crypto.subtle.digest('SHA-256', input);
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');

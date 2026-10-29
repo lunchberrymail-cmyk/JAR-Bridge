@@ -70,8 +70,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const bannerRows = el('ul', '');
   const bannerGo = button('Lorebook details ↓', () => { root.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); (pendingRebuilt() ? calloutButton : captureButton).focus?.({ preventScroll: true }); }, 'jar-link');
   banner.append(bannerRows, bannerGo);
-  /** Characters a book was attached to, by book key. */
-  const attachedTo = new Map<string, string>();
+  /** The character each imported book was attached to, by book key. Importing and attaching are tracked apart. */
+  const attachedTo = new Map<string, ImportedCharacter>();
+  /** An imported book still to be attached to the current target, if any. */
+  const needsAttach = (book: JarLorebook) => { const target = attachTarget(); return !!target && imported.has(bookKey(book)) && attachedTo.get(bookKey(book))?.id !== target.id; };
   /** Expanded books and entries, by key. */
   const openKeys = new Set<string>();
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
@@ -131,7 +133,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
   root.append(heading, intro, refresh, picker, notice, callout, books, closed, waitRow, status);
-  function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book))); }
+  function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !uncertain.has(bookKey(book)) && (!imported.has(bookKey(book)) || needsAttach(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
   function setBusy(value: boolean) { busy = value; options.onBusy(value); render(); }
@@ -145,10 +147,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     callout.hidden = !pending;
     if (pending) {
       const target = attachTarget();
-      calloutText.textContent = target
+      calloutText.textContent = needsAttach(pending) ? `${pending.title} is in your World Info but not attached to ${target!.name}.`
+        : target
         ? `${pending.title} was rebuilt from the closed lorebook. It is not attached automatically because its keywords were inferred by an LLM; review it below, then add it to ${target.name}.`
         : `${pending.title} was rebuilt from the closed lorebook. Import the character card, or choose the character you already have above, to attach it. You can also import it on its own.`;
-      calloutButton.textContent = target ? `Import and attach to ${target.name}` : 'Import rebuilt lorebook';
+      calloutButton.textContent = needsAttach(pending) ? `Attach to ${target!.name}` : target ? `Import and attach to ${target.name}` : 'Import rebuilt lorebook';
     }
     calloutButton.disabled = locked;
     calloutWithCard.hidden = !!attachTarget() || !options.canImportCard?.(); calloutWithCard.disabled = locked;
@@ -203,8 +206,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     banner.hidden = !data || hiddenCard || !(publicBooks.length || data.closedTitles.length);
     if (!data || banner.hidden) return;
     const done = (book: JarLorebook): [string, string] | undefined => {
-      const name = attachedTo.get(bookKey(book));
-      return name ? ['done', `Attached to ${name}`] : imported.has(bookKey(book)) ? ['done', 'In World Info'] : undefined;
+      const attached = attachedTo.get(bookKey(book));
+      return attached ? ['done', `Attached to ${attached.name}`] : imported.has(bookKey(book)) ? ['done', 'In World Info'] : undefined;
     };
     const rows: [string, string, string][] = publicBooks.map(book => [book.title, ...(done(book) || (autoTried.has(bookKey(book)) ? ['partial', 'Open · not imported, use Import lorebook'] : ['open', 'Open · imports with the card']))] as [string, string, string]);
     const rebuilt = data.books.find(book => book.kind === 'rebuilt');
@@ -279,9 +282,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     const row = el('div', 'jar-actions jar-lorebook-actions');
     const attach = el('label', 'jar-checkbox'); const attachInput = el('input'); attachInput.type = 'checkbox'; const target = attachTarget(); attachInput.checked = !!target;
     attach.append(attachInput, el('span', '', target ? `Attach to ${target.name}` : 'Import the character card, or choose your character above, to attach this lorebook'));
+    // An imported book can still be attached: it reuses the World Info book, never a second copy.
+    const attachOnly = needsAttach(book);
     attachInput.disabled = locked || !target || !!done; attach.hidden = !!done;
-    const go = button(done ? 'Imported' : 'Import lorebook', () => { void importBook(book, attachInput.checked); }, 'jar-button jar-primary');
-    go.disabled = locked || !!done || unsure;
+    const go = button(attachOnly ? `Attach to ${target!.name}` : done ? 'Imported' : 'Import lorebook', () => { void importBook(book, attachOnly || attachInput.checked); }, 'jar-button jar-primary');
+    go.disabled = locked || unsure || (!!done && !attachOnly);
     row.append(attach, go);
     if (unsure) row.append(button('I checked World Info — retry', () => { uncertain.delete(bookKey(book)); render(); }, 'jar-link'));
     if (done) row.append(el('span', 'jar-help', `${done.name} is in your World Info.`));
@@ -309,7 +314,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   /** Public books need no capture, so they follow the imported character card in one go. */
   function autoImport() {
     if (disposed || busy || outerBusy || loading || !character || !data) return;
-    let next = data.books.find(book => book.kind === 'public' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
+    let next = data.books.find(book => book.kind === 'public' && (!imported.has(bookKey(book)) || needsAttach(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
     if (!next && rebuiltAfterCard) { rebuiltAfterCard = false; next = pendingRebuilt(); }
     if (!next) return;
     autoTried.add(bookKey(next));
@@ -375,18 +380,20 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
 
   async function importBook(book: JarLorebook, attach: boolean) {
     const key = bookKey(book);
-    if (disposed || busy || outerBusy || imported.has(key) || uncertain.has(key)) return;
-    const token = ++generation, target = attach ? attachTarget() : undefined;
-    setBusy(true); message(`Importing ${book.title}…`);
+    const target = attach ? attachTarget() : undefined, earlier = imported.get(key);
+    if (disposed || busy || outerBusy || uncertain.has(key)) return;
+    if (earlier && (!target || attachedTo.get(key)?.id === target.id)) return;
+    const token = ++generation;
+    setBusy(true); message(earlier ? `Attaching ${book.title}…` : `Importing ${book.title}…`);
     try {
-      const result = await importNativeLorebook(ctx, nativeLorebook(book), () => !disposed && token === generation, abort.signal);
+      const result = earlier || await importNativeLorebook(ctx, nativeLorebook(book), () => !disposed && token === generation, abort.signal);
       imported.set(key, result);
       if (disposed || token !== generation) return;
       if (!target) { message(`Imported ${result.entryCount} entries into World Info.`, 'success'); return; }
       try {
         await options.client.request('attach-lorebook', options.getBaseUrl(), undefined, undefined, undefined, { characterId: target.id, worldBookId: result.id });
-        attachedTo.set(key, target.name);
-        if (!disposed && token === generation) message(`Imported ${result.entryCount} entries and attached them to ${target.name}.`, 'success');
+        attachedTo.set(key, target);
+        if (!disposed && token === generation) message(earlier ? `Attached ${result.name} to ${target.name}.` : `Imported ${result.entryCount} entries and attached them to ${target.name}.`, 'success');
       } catch (error) {
         if (!isAbort(error) && !disposed && token === generation) message(`Imported into World Info, but not attached: ${error instanceof Error ? error.message : 'attachment failed.'} Attach it from the character’s lorebook settings.`, 'warning');
       }

@@ -39,7 +39,7 @@ describe('personal installation ownership bootstrap', () => {
   });
 
   test('never replaces mismatched, malformed, oversized or unreadable existing pins', async () => {
-    for (const stored of [pin('another-user'), pin('alice', 'different-installation'), '{}', 'bad-json', 'x'.repeat(4097)]) {
+    for (const stored of [pin('another-user'), pin('another-user', 'different-installation'), '{}', 'bad-json', 'x'.repeat(4097)]) {
       const h = harness({ stored });
       expect(await h.binding.ensure(h.request())).toBe(false);
       expect(h.sent).toEqual([]); expect(h.writes).toEqual([]); expect(h.roleArguments).toEqual([]);
@@ -48,6 +48,23 @@ describe('personal installation ownership bootstrap', () => {
     const unreadable = harness({ stored: pin() }); unreadable.api.storage.read = async () => { throw new Error('Access failed'); };
     expect(await unreadable.binding.ensure(unreadable.request())).toBe(false);
     expect(unreadable.writes).toEqual([]);
+  });
+
+  test('after a reinstall, the same owner re-proves and the pin moves to the new installation', async () => {
+    const stale = pin('alice', 'old-installation');
+    const h = harness({ stored: stale }); const result = h.binding.ensure(h.request()); await tick();
+    expect(h.roleArguments).toEqual([[]]); expect(h.sent).toHaveLength(1); expect(h.writes).toEqual([]);
+    h.acknowledge(h.sent[0].payload, 'alice', 'another-document'); await tick(); expect(h.writes).toEqual([]);
+    h.acknowledge(h.sent[0].payload); expect(await result).toBe(true);
+    expect(h.storage.get('installation.json')).toBe(pin());
+    // Without the proof, or on an operator installation, nothing changes.
+    const unproved = harness({ stored: stale, proofTtlMs: 5 });
+    expect(await unproved.binding.ensure(unproved.request())).toBe(false); expect(unproved.storage.get('installation.json')).toBe(stale);
+    const operator = harness({ stored: stale, personal: false });
+    expect(await operator.binding.ensure(operator.request())).toBe(false); expect(operator.sent).toEqual([]); expect(operator.writes).toEqual([]);
+    // Another account never inherits or replaces alice's old pin.
+    const other = harness({ stored: stale });
+    expect(await other.binding.ensure(other.request({ userId: 'bob' }))).toBe(false); expect(other.sent).toEqual([]); expect(other.writes).toEqual([]);
   });
 
   test('writes a fresh pin only after an exact account/document/request/command/random-nonce proof', async () => {

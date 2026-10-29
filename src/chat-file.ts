@@ -16,13 +16,29 @@ function object(value: unknown): Record<string, unknown> | undefined {
 }
 function rowError(line: number, detail: string): never { return fail(`Conversation line ${line}: ${detail} Nothing has been imported.`); }
 
+/**
+ * SillyTavern writes local-time dates JavaScript cannot parse: `create_date` as
+ * `2025-01-01@10h00m00s000ms` (older files unpadded, with spaces), and older
+ * `send_date` values as `October 29, 2026 6:07pm`. Impossible dates stay NaN.
+ */
+function parseDate(value: string): number {
+  const humanized = /^(\d{4})-(\d{1,2})-(\d{1,2}) ?@ ?(\d{1,2})h ?(\d{1,2})m ?(\d{1,2})s(?: ?(\d{1,3})ms)?$/.exec(value.trim());
+  if (humanized) {
+    const [year, month, day, hours, minutes, seconds, ms] = humanized.slice(1).map(part => Number(part ?? 0));
+    const local = new Date(year, month - 1, day, hours, minutes, seconds, ms);
+    return local.getFullYear() === year && local.getMonth() === month - 1 && local.getDate() === day
+      && local.getHours() === hours && local.getMinutes() === minutes && local.getSeconds() === seconds ? local.getTime() : NaN;
+  }
+  return Date.parse(value.trim().replace(/(\d)(am|pm)$/i, '$1 $2'));
+}
+
 function date(value: unknown, line: number): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   let seconds: number;
   if (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value))) {
     const numeric = Number(value);
     seconds = Math.floor(numeric >= 1_000_000_000_000 ? numeric / 1000 : numeric);
-  } else if (typeof value === 'string') seconds = Math.floor(Date.parse(value) / 1000);
+  } else if (typeof value === 'string') seconds = Math.floor(parseDate(value) / 1000);
   else return rowError(line, 'a timestamp is invalid.');
   if (!Number.isSafeInteger(seconds) || seconds < 0) rowError(line, 'a timestamp is invalid.');
   return seconds;
@@ -73,10 +89,12 @@ function message(row: Record<string, unknown>, line: number): NativeChatMessage 
   const extra = safeExtra(row.extra, line);
   let info: Record<string, unknown>[] | undefined;
   if (row.swipe_info !== undefined) {
-    if (!Array.isArray(row.swipe_info) || row.swipe_info.length !== swipes.length || !row.swipe_info.every(value => !!object(value))) {
+    // SillyTavern's alternate greetings carry `swipe_info: []`: missing details are
+    // allowed (they use the message's own date), extra or malformed ones are not.
+    if (!Array.isArray(row.swipe_info) || row.swipe_info.length > swipes.length || !row.swipe_info.every(value => !!object(value))) {
       return rowError(line, 'alternate reply details do not match the replies.');
     }
-    info = row.swipe_info as Record<string, unknown>[];
+    if (row.swipe_info.length) info = swipes.map((_, index) => (row.swipe_info as Record<string, unknown>[])[index] ?? {});
   }
   let explicitDates: number[] | undefined;
   if (row.swipe_dates !== undefined) {

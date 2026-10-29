@@ -10,6 +10,7 @@ import { createChatHistory, type HistoryStart } from './chats-ui';
 import { createImportGuide } from './import-guide';
 import { createLorebooks } from './lorebooks-ui';
 import { createCleanup } from './cleanup-ui';
+import { bytesHash } from './content-hash';
 import { parseJanitorLink } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
 
@@ -36,6 +37,7 @@ export function setup(ctx: SpindleFrontendContext) {
   let pendingHistory: JarHistoryResult | undefined;
   /** JAR record of a previewed character whose creator hides its definition. */
   let hiddenRecordId: string | undefined;
+  let chosenFileHash: string | undefined, fileHashToken = 0;
   const abort = new AbortController();
   const client = createJarClient(ctx);
   const removeStyle = ctx.dom.addStyle(styles);
@@ -204,7 +206,8 @@ export function setup(ctx: SpindleFrontendContext) {
     if (uncertainSources.has(previous)) uncertainSources.add(alias);
     recordAliases.set(key, alias);
   }
-  function sourceKey() { return mode === 'archive' && selected ? recordKey(selected.recordId) : chosenFile ? `file:${chosenFile.name}:${chosenFile.size}:${chosenFile.lastModified}` : ''; }
+  // A chosen file is known by its contents: two files can share a name, size and date.
+  function sourceKey() { return mode === 'archive' && selected ? recordKey(selected.recordId) : chosenFile && chosenFileHash ? `file:${chosenFileHash}` : ''; }
   function restoreOutcome() { const key = sourceKey(); imported = importedSources.get(key); uncertain = uncertainSources.has(key); }
   function updateControls() {
     if (disposed) return;
@@ -212,7 +215,7 @@ export function setup(ctx: SpindleFrontendContext) {
     loadLink.disabled = busy || !sourceLink.value.trim(); clearLink.disabled = busy || !sourceLink.value;
     useExisting.hidden = !pendingHistory; useExisting.disabled = busy;
     retry.hidden = !uncertain; retry.disabled = busy;
-    importButton.disabled = busy || uncertain || !!imported || !(mode === 'archive' ? selected : chosenFile);
+    importButton.disabled = busy || uncertain || !!imported || !(mode === 'archive' ? selected : chosenFile && chosenFileHash);
     importButton.textContent = busy ? 'Working…' : imported ? 'Imported' : 'Import to Lumiverse';
     success.hidden = guideVisible || mode === 'history' || !imported; successText.textContent = imported ? `${imported.name} is in your library.` : '';
     nextHistory.disabled = busy; backToGuide.disabled = busy; closeGuide.disabled = busy; guide.setBusy(busy);
@@ -231,7 +234,7 @@ export function setup(ctx: SpindleFrontendContext) {
     continueHistory.hidden = !returnToHistory || !connected; continueHistory.disabled = busy;
     root.setAttribute('aria-busy', String(busy));
   }
-  function resetSelection() { lorebooks.hide(); selected = undefined; hiddenRecordId = undefined; chosenFile = undefined; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
+  function resetSelection() { lorebooks.hide(); selected = undefined; hiddenRecordId = undefined; chosenFile = undefined; chosenFileHash = undefined; fileHashToken++; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
   function showGuide() {
     if (disposed || busy) return;
     generation++; client.cancel(); chatHistory.deactivate(); guideVisible = true; updateControls();
@@ -365,10 +368,19 @@ export function setup(ctx: SpindleFrontendContext) {
   function acceptFile(file?: File) {
     if (!file || disposed || busy) return;
     if (!/\.(png|json|charx)$/i.test(file.name) || !file.size) { message('Choose a nonempty PNG, JSON, or CHARX card export.', 'error'); return; }
-    resetSelection(); chosenFile = file; restoreOutcome(); fileName.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`; message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This file has already been imported.' : 'Card selected. Choose Import to add it to your library.'); updateControls();
+    resetSelection(); chosenFile = file; fileName.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB`; message('Reading the card file…'); updateControls();
+    const token = ++fileHashToken;
+    void file.arrayBuffer().then(buffer => bytesHash(new Uint8Array(buffer))).then(hash => {
+      if (disposed || token !== fileHashToken || chosenFile !== file) return;
+      chosenFileHash = hash; restoreOutcome();
+      message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This file has already been imported.' : 'Card selected. Choose Import to add it to your library.'); updateControls();
+    }, () => {
+      if (disposed || token !== fileHashToken || chosenFile !== file) return;
+      chosenFile = undefined; fileName.textContent = 'No file selected'; message('This file could not be read. Choose it again.', 'error'); updateControls();
+    });
   }
   async function runImport() {
-    if (disposed || busy || uncertain || imported || !(mode === 'archive' ? selected : chosenFile)) return;
+    if (disposed || busy || uncertain || imported || !(mode === 'archive' ? selected : chosenFile && chosenFileHash)) return;
     const token = generation, card = selected, file = chosenFile, key = sourceKey(), omit = noAvatarInput.checked;
     busy = true; updateControls(); renderList(); message('Preparing your character…');
     try {
