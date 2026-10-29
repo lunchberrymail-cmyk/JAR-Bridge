@@ -2,6 +2,7 @@ import type { SpindleAPI } from 'lumiverse-spindle-types';
 import { isRecordId, object } from './jar-adapter';
 import { isChatId } from './conversation-adapter';
 import { parseJanitorLink } from './janitor-link';
+import type { JarLoreTrigger } from './lorebook-adapter';
 
 export const DEFAULT_JAR_URL = 'http://127.0.0.1:4577';
 export const MAX_JAR_RESPONSE_BYTES = 25 * 1024 * 1024;
@@ -20,7 +21,7 @@ export function normalizeJarBase(value?: string): string {
 
 export type JarRoute = { kind: 'version' } | { kind: 'captures' } | { kind: 'card'; recordId: string } | { kind: 'history'; chatId: string }
   | { kind: 'inspect'; sourceUrl: string } | { kind: 'link-chat'; sourceUrl: string }
-  | { kind: 'capture'; recordId: string; force: boolean } | { kind: 'rebuild'; recordId: string };
+  | { kind: 'capture'; recordId: string; force: boolean; trigger?: JarLoreTrigger } | { kind: 'rebuild'; recordId: string };
 export interface JarTransportOptions { current: () => boolean }
 
 /**
@@ -103,7 +104,7 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     else if (route.kind === 'captures') path = '/api/captures';
     else if (route.kind === 'card' && isRecordId(route.recordId)) path = `/api/captures/${encodeURIComponent(route.recordId)}`;
     else if (route.kind === 'history' && isChatId(route.chatId)) { path = '/api/chat-export'; body = JSON.stringify({ chat: route.chatId }); }
-    else if (route.kind === 'capture' && isRecordId(route.recordId)) { path = '/api/capture'; body = JSON.stringify({ id: route.recordId, ...(route.force === true ? { force: true } : {}) }); }
+    else if (route.kind === 'capture' && isRecordId(route.recordId)) { path = '/api/capture'; body = JSON.stringify({ id: route.recordId, ...(route.force === true ? { force: true } : {}), ...(route.trigger ? { trigger: { ...route.trigger, custom: !!route.trigger.customText } } : {}) }); }
     else if (route.kind === 'rebuild' && isRecordId(route.recordId)) { path = '/api/extract'; body = JSON.stringify({ id: route.recordId }); }
     else if (route.kind === 'inspect' || route.kind === 'link-chat') {
       const link = parseJanitorLink(route.sourceUrl);

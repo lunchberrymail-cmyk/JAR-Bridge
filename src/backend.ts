@@ -1,7 +1,7 @@
 import type { SpindleAPI } from 'lumiverse-spindle-types';
 import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarLinkResult, type JarResponse } from './jar-adapter';
 import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRoute } from './transport';
-import { characterIdOf, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
+import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
 import { parseJanitorLink } from './janitor-link';
 import { createOwnerBinding, isPinnedOwner } from './owner-binding';
@@ -195,7 +195,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (command === 'capture-lorebook' && !before.allowProxy) throw new Error('This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook. Its public lorebooks can still be imported.');
             if (command === 'rebuild-lorebook' && !before.captured) throw new Error('Capture the closed lorebook in JAR first, then rebuild it.');
             let state: JarLorebookAction['state'] = 'done';
-            try { await ownedGet(command === 'capture-lorebook' ? { kind: 'capture', recordId: target, force: request.force === true } : { kind: 'rebuild', recordId: target }); }
+            try { await ownedGet(command === 'capture-lorebook' ? { kind: 'capture', recordId: target, force: request.force === true, ...(request.trigger !== undefined ? { trigger: loreTrigger(request.trigger) } : {}) } : { kind: 'rebuild', recordId: target }); }
             catch (error) { if (!(error instanceof JarStillRunningError)) throw error; state = 'running'; }
             if (!current()) return;
             result = { state, lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;

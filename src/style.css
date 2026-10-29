@@ -113,4 +113,9 @@
 .jar-lorebook-closed>h3 { font-size:14px; margin:0 0 4px; color:#eee4f8; }
 .jar-lorebook-confirm { border:1px solid #8a6d5a; background:#3a2f2a; border-radius:9px; padding:12px; margin-top:12px; }
 .jar-lorebook-confirm .jar-help { color:#e7d2bd; margin-top:0; }
+.jar-lorebook-trigger { display:flex; flex-direction:column; gap:10px; margin:0 0 4px; }
+.jar-lorebook-trigger[hidden] { display:none; }
+.jar-lorebook-trigger textarea { resize:vertical; min-height:64px; }
+.jar-lorebook-sources>summary { color:#e7d2bd; font-size:12px; cursor:pointer; }
+.jar-lorebook-sources .jar-checkbox { padding:8px 0 0; }
 .jar-lorebook-wait { display:flex; gap:12px; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; }

@@ -1,10 +1,15 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import type { createJarClient } from './client';
 import { importNativeLorebook, ImportError, type ImportedCharacter, type ImportedLorebook } from './import-flow';
-import { nativeLorebook, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
+import { defaultLoreTrigger, loreTriggerSources, MAX_TRIGGER_TEXT, nativeLorebook, type JarLoreTrigger, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 
 type Client = ReturnType<typeof createJarClient>;
 type Action = 'capture' | 'rebuild';
+type TriggerSource = typeof loreTriggerSources[number];
+const sourceLabels: Record<TriggerSource, string> = {
+  card: 'Character card', siteDescription: 'Card description on JanitorAI', scenario: 'Scenario', greetings: 'First message(s)',
+  lorebookNames: 'Lorebook names', savedDefault: 'JAR’s saved default trigger text',
+};
 export interface LorebookOptions {
   client: Client;
   getBaseUrl: () => string;
@@ -24,7 +29,7 @@ function keys(value: unknown): string[] { return Array.isArray(value) ? value.fi
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const confirmText: Record<Action, string> = {
-  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. This acts on the JanitorAI account signed into JAR (JAR recommends a throwaway account). The creator chose to keep this lorebook closed.',
+  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. This acts on the JanitorAI account signed into JAR (JAR recommends a throwaway account). The creator chose to keep this lorebook closed.',
   rebuild: 'JAR will send the captured lorebook text and this character’s card to the extraction LLM set in JAR’s ⚙ Settings. This uses that service’s quota or credit. The LLM infers trigger keywords, so review them after import.',
 };
 
@@ -33,12 +38,14 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   let recordId: string | undefined, data: JarLorebooksResult | undefined, character: ImportedCharacter | undefined;
   let busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
   const imported = new Map<string, ImportedLorebook>();
+  /** Public books already tried automatically for the imported character; a failure is not retried on its own. */
+  const autoTried = new Set<string>();
   const uncertain = new Set<string>();
   const abort = new AbortController();
 
   const root = el('section', 'jar-lorebooks'); root.hidden = true; root.setAttribute('aria-label', 'Lorebooks from JAR');
   const heading = el('h2', '', 'Lorebooks');
-  const intro = el('p', 'jar-help', 'Lorebooks JAR found for this character. Import them into Lumiverse’s World Info, optionally attached to the character.');
+  const intro = el('p', 'jar-help', 'Lorebooks JAR found for this character. Public lorebooks are imported and attached automatically when you import the character card; you can also import them on their own.');
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -48,9 +55,30 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const closedActions = el('div', 'jar-actions jar-lorebook-actions'); closedActions.append(captureButton, rebuildButton);
   const confirm = el('div', 'jar-lorebook-confirm'); confirm.hidden = true; confirm.setAttribute('role', 'group'); confirm.setAttribute('aria-label', 'Confirm lorebook action');
   const confirmMessage = el('p', 'jar-help');
+  // What JAR's trigger message contains: the user's words plus the chosen sources.
+  const trigger = el('div', 'jar-lorebook-trigger');
+  const wordsLabel = el('label', 'jar-field');
+  const words = el('textarea', 'jar-input'); words.rows = 3; words.maxLength = MAX_TRIGGER_TEXT;
+  words.placeholder = 'Names, places, factions or other words likely to trigger hidden entries';
+  words.addEventListener('input', () => render());
+  wordsLabel.append(el('span', 'jar-help', 'Your words (optional), added to the trigger message'), words);
+  const sources = el('details', 'jar-lorebook-sources'); sources.append(el('summary', '', 'Also include'));
+  const sourceInputs = {} as Record<TriggerSource, HTMLInputElement>;
+  for (const source of loreTriggerSources) {
+    const label = el('label', 'jar-checkbox'); const input = el('input'); input.type = 'checkbox'; input.checked = defaultLoreTrigger[source];
+    input.addEventListener('change', () => render());
+    label.append(input, el('span', '', sourceLabels[source])); sources.append(label); sourceInputs[source] = input;
+  }
+  trigger.append(wordsLabel, sources);
+  function triggerChoice(): JarLoreTrigger {
+    const choice = { ...defaultLoreTrigger, customText: words.value.trim() };
+    for (const source of loreTriggerSources) choice[source] = sourceInputs[source].checked;
+    return choice;
+  }
+  function resetTrigger() { words.value = ''; for (const source of loreTriggerSources) sourceInputs[source].checked = defaultLoreTrigger[source]; }
   const confirmYes = button('', () => { const action = confirming; confirming = undefined; if (action) void run(action); }, 'jar-button jar-primary');
   const confirmNo = button('Cancel', () => { confirming = undefined; render(); });
-  const confirmRow = el('div', 'jar-actions'); confirmRow.append(confirmNo, confirmYes); confirm.append(confirmMessage, confirmRow);
+  const confirmRow = el('div', 'jar-actions'); confirmRow.append(confirmNo, confirmYes); confirm.append(confirmMessage, trigger, confirmRow);
   closed.append(closedTitle, closedText, closedActions, confirm);
   const waitRow = el('div', 'jar-lorebook-wait'); waitRow.hidden = true;
   const waitText = el('span', 'jar-help');
@@ -88,7 +116,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     captureButton.disabled = locked || !!confirming; rebuildButton.disabled = locked || !!confirming;
     confirm.hidden = !confirming;
     if (confirming) { confirmMessage.textContent = confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
-    confirmYes.disabled = locked; confirmNo.disabled = locked;
+    trigger.hidden = confirming !== 'capture';
+    const choice = triggerChoice(), empty = !choice.customText && !loreTriggerSources.some(source => choice[source]);
+    words.disabled = locked; for (const source of loreTriggerSources) sourceInputs[source].disabled = locked;
+    confirmYes.disabled = locked || (confirming === 'capture' && empty); confirmNo.disabled = locked;
     waitRow.hidden = !waiting; stop.disabled = !waiting;
     root.setAttribute('aria-busy', String(busy));
   }
@@ -136,7 +167,16 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (disposed || token !== generation) return;
       data = result; message('');
     } catch (error) { if (!disposed && token === generation) message(isAbort(error) ? '' : error instanceof Error ? error.message : 'Could not read lorebooks from JAR.', isAbort(error) ? '' : 'error'); }
-    finally { if (!disposed && token === generation) { loading = false; render(); } }
+    finally { if (!disposed && token === generation) { loading = false; render(); autoImport(); } }
+  }
+
+  /** Public books need no capture, so they follow the imported character card in one go. */
+  function autoImport() {
+    if (disposed || busy || outerBusy || loading || !character || !data) return;
+    const next = data.books.find(book => book.kind === 'public' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
+    if (!next) return;
+    autoTried.add(bookKey(next));
+    void importBook(next, true).then(autoImport);
   }
 
   function ask(action: Action) { if (disposed || busy || outerBusy || !data) return; confirming = action; render(); confirmYes.focus?.({ preventScroll: true }); }
@@ -151,7 +191,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       : next.rebuiltAt > before.rebuiltAt;
     try {
       const reply = await options.client.request(action === 'capture' ? 'capture-lorebook' : 'rebuild-lorebook', options.getBaseUrl(), id, undefined, undefined,
-        action === 'capture' && before.captured ? { force: true } : undefined) as JarLorebookAction;
+        action === 'capture' ? { ...(before.captured ? { force: true } : {}), trigger: triggerChoice() } : undefined) as JarLorebookAction;
       if (disposed || token !== generation) return;
       data = reply.lorebooks;
       if (reply.state === 'running' && !finished(data)) {
@@ -205,12 +245,12 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string) {
       if (disposed) return;
-      if (recordId !== id) { generation++; loading = false; recordId = id; data = undefined; confirming = undefined; message(''); }
+      if (recordId !== id) { generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
-    setCharacter(value?: ImportedCharacter) { character = value; render(); },
-    setBusy(value: boolean) { outerBusy = value && !busy; render(); },
+    setCharacter(value?: ImportedCharacter) { character = value; render(); autoImport(); },
+    setBusy(value: boolean) { outerBusy = value && !busy; render(); autoImport(); },
     destroy() { disposed = true; generation++; abort.abort(); root.remove(); },
   };
 }

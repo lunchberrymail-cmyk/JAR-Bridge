@@ -107,6 +107,20 @@ describe('JAR lorebook backend commands', () => {
     expect(f.calls[1].options.body).toBe('{"id":"123-abc","force":true}');
     expect(f.replies[0].result.state).toBe('running');
   });
+  test('capture passes checked trigger choices to JAR and drops unknown fields', async () => {
+    const f = fixture({ cors: async url => url.endsWith('/api/capture') ? response({}) : response(record()) });
+    f.send({ id: 't1', command: 'capture-lorebook', recordId: '123-abc', trigger: { customText: `  Thornwood ${'x'.repeat(30_000)}`, scenario: false, card: 'no', evil: true } }); await wait(); await wait();
+    const sent = JSON.parse(f.calls.find(call => call.url.endsWith('/api/capture'))!.options.body);
+    expect(Object.keys(sent.trigger).sort()).toEqual(['card', 'custom', 'customText', 'greetings', 'lorebookNames', 'savedDefault', 'scenario', 'siteDescription']);
+    expect(sent.trigger).toMatchObject({ custom: true, card: true, scenario: false, siteDescription: true });
+    expect(sent.trigger.customText.startsWith('Thornwood x')).toBe(true); expect(sent.trigger.customText).toHaveLength(20_000);
+  });
+  test('capture with no trigger source and no words is refused before calling JAR', async () => {
+    const f = fixture({ cors: async url => url.endsWith('/api/capture') ? response({}) : response(record()) });
+    const off = { card: false, siteDescription: false, scenario: false, greetings: false, lorebookNames: false, savedDefault: false, customText: '   ' };
+    f.send({ id: 't2', command: 'capture-lorebook', recordId: '123-abc', trigger: off }); await wait(); await wait();
+    expect(f.calls.some(call => call.url.endsWith('/api/capture'))).toBe(false); expect(f.replies[0].error).toContain('at least one trigger source');
+  });
   test('capture is refused before calling JAR when the creator forbids proxies', async () => {
     const f = fixture({ cors: async () => response(record({ meta: { allow_proxy: false } })) });
     f.send({ id: 'c2', command: 'capture-lorebook', recordId: '123-abc' }); await wait();
@@ -185,18 +199,51 @@ describe('lorebook panel', () => {
     expect(p.ui.root.textContent).toContain('Captured. Rebuild it');
   });
 
-  test('importing a book posts the reviewed entries to the native importer, then attaches it', async () => {
+  test('importing the character card imports and attaches its public books, not the rebuilt one', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;
     const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) }
       : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined);
-    p.ui.show('123-abc'); p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); await settle();
-    p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].click(); for (let i = 0; i < 5; i++) await settle();
+    p.ui.show('123-abc'); await settle();
+    expect(posted).toHaveLength(0);
+    p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); for (let i = 0; i < 5; i++) await settle();
     expect(posted).toHaveLength(1); expect(posted[0].url).toBe('/api/v1/world-books/import');
     expect(posted[0].body.name).toBe('MENAGERIE'); expect(posted[0].body.entries).toHaveLength(2);
-    expect(p.requests.find(r => r.command === 'attach-lorebook')).toMatchObject({ characterId: 'char-1', worldBookId: 'book-9' });
+    expect(p.requests.filter(r => r.command === 'attach-lorebook')).toEqual([expect.objectContaining({ characterId: 'char-1', worldBookId: 'book-9' })]);
     expect(p.ui.root.textContent).toContain('attached them to Arthur');
-    expect(p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].textContent).toBe('Imported');
+    const buttons = p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary');
+    expect(buttons[0].textContent).toBe('Imported'); expect(buttons[1].textContent).toBe('Import lorebook');
+    p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); await settle();
+    expect(posted).toHaveLength(1);
+  });
+
+  test('a public book can still be imported on its own before the card', async () => {
+    const posted: any[] = [];
+    globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) } : undefined);
+    p.ui.show('123-abc'); await settle();
+    p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].click(); for (let i = 0; i < 5; i++) await settle();
+    expect(posted).toHaveLength(1); expect(p.requests.some(r => r.command === 'attach-lorebook')).toBe(false);
+    expect(p.ui.root.textContent).toContain('Imported 2 entries into World Info');
+  });
+
+  test('capture sends the user’s words and chosen sources, and needs at least one', async () => {
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined })) }
+      : request.command === 'capture-lorebook' ? { result: { state: 'done', lorebooks: toLorebooks(record({ capturedAt: 300 })) } } : undefined);
+    p.ui.show('123-abc'); await settle();
+    p.button('Capture closed lorebook…')!.click(); await settle();
+    const words = p.ui.root.querySelector<HTMLTextAreaElement>('.jar-lorebook-trigger textarea')!;
+    const boxes = [...p.ui.root.querySelectorAll<HTMLInputElement>('.jar-lorebook-sources input')];
+    expect(boxes).toHaveLength(6); expect(boxes.every(box => box.checked)).toBe(true);
+    for (const box of boxes) { box.checked = false; box.dispatchEvent(new p.ui.root.ownerDocument.defaultView!.Event('change')); }
+    expect(p.button('Yes, capture')!.disabled).toBe(true);
+    words.value = '  Eclipse, Thornwood  '; words.dispatchEvent(new p.ui.root.ownerDocument.defaultView!.Event('input'));
+    boxes[0].checked = true; boxes[0].dispatchEvent(new p.ui.root.ownerDocument.defaultView!.Event('change'));
+    expect(p.button('Yes, capture')!.disabled).toBe(false);
+    p.button('Yes, capture')!.click(); for (let i = 0; i < 5; i++) await settle();
+    const sent = p.requests.find(r => r.command === 'capture-lorebook');
+    expect(sent.force).toBeUndefined();
+    expect(sent.trigger).toEqual({ card: true, siteDescription: false, scenario: false, greetings: false, lorebookNames: false, savedDefault: false, customText: 'Eclipse, Thornwood' });
   });
 
   test('without World Books permission nothing is posted', async () => {

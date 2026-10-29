@@ -6,7 +6,7 @@ import { parseJanitorLink, type JanitorLink } from './janitor-link';
 type Command = Exclude<JarRequest['command'], 'cancel'>;
 type Result = JarResponse['result'];
 type Context = Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>;
-export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId'>;
+export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId' | 'trigger'>;
 type Pending = {
   id: string;
   command: Command;
@@ -153,7 +153,7 @@ export function createJarClient(ctx: Context): {
         };
         active = pending;
         try {
-          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}) } satisfies JarRequest);
+          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}), ...(extras?.trigger !== undefined ? { trigger: extras.trigger } : {}) } satisfies JarRequest);
         } catch {
           if (detach(pending)) reject(new Error('Could not send this request to the JAR bridge. Try again.'));
         }

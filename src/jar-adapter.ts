@@ -47,6 +47,8 @@ export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
   force?: boolean; characterId?: string; worldBookId?: string;
+  /** Capture trigger sources and the user's own words; the backend checks them. */
+  trigger?: unknown;
 }
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;

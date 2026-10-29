@@ -27,6 +27,25 @@ export interface JarLorebooksResult {
 export type JarLorebookAction = { state: 'done' | 'running'; lorebooks: JarLorebooksResult };
 
 export const MAX_LOREBOOK_ENTRIES = 5000;
+export const MAX_TRIGGER_TEXT = 20_000;
+
+/** Text JAR's capture puts in its lorebook-trigger message. Defaults match JAR's own capture panel. */
+export interface JarLoreTrigger {
+  card: boolean; siteDescription: boolean; scenario: boolean; greetings: boolean; lorebookNames: boolean; savedDefault: boolean;
+  /** The user's own words, sent as extra trigger keywords. */
+  customText: string;
+}
+export const loreTriggerSources = ['card', 'siteDescription', 'scenario', 'greetings', 'lorebookNames', 'savedDefault'] as const;
+export const defaultLoreTrigger: JarLoreTrigger = { card: true, siteDescription: true, scenario: true, greetings: true, lorebookNames: true, savedDefault: true, customText: '' };
+
+/** Keep only known sources; JAR needs at least one source or some words. */
+export function loreTrigger(value: unknown): JarLoreTrigger {
+  const input = object(value);
+  const result = { ...defaultLoreTrigger, customText: typeof input.customText === 'string' ? input.customText.trim().slice(0, MAX_TRIGGER_TEXT) : '' };
+  for (const source of loreTriggerSources) if (typeof input[source] === 'boolean') result[source] = input[source] as boolean;
+  if (!result.customText && !loreTriggerSources.some(source => result[source])) throw new Error('Choose at least one trigger source or add your own words.');
+  return result;
+}
 const MAX_TITLE = 200;
 
 function text(value: unknown, limit = 20_000): string { return typeof value === 'string' ? value.slice(0, limit) : ''; }

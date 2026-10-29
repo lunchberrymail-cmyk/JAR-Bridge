@@ -68,11 +68,11 @@ For files, choose **Import card file** for PNG/JSON/CHARX cards or **Chat histor
 
 ## Import lorebooks
 
-After you preview a JanitorAI character link, a **Lorebooks** section lists what JAR has for that character. Expand a book to review its entries and keywords, then choose **Import lorebook**. If you imported the character card in the same session, **Attach to <character>** links the new lorebook to it. Books go to Lumiverse's World Info through its normal importer.
+After you preview a JanitorAI character link, a **Lorebooks** section lists what JAR has for that character. Expand a book to review its entries and keywords. Books go to Lumiverse's World Info through its normal importer.
 
-- **Public lorebooks** that JAR downloaded are ready to import.
+- **Public lorebooks** that JAR downloaded are imported and attached automatically when you import the character card. You can also import one on its own with **Import lorebook** before importing the card.
 - **Closed lorebooks** need two explicit steps, each with a confirmation:
-  1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR; JAR recommends a throwaway account. It is unavailable when the creator does not allow proxies.
+  1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR; JAR recommends a throwaway account. It is unavailable when the creator does not allow proxies. Entries only appear when one of their keywords is in the trigger message, so the confirmation has a **Your words** box for names, places or other likely keywords, and an **Also include** list of what else JAR puts in that message (card, site description, scenario, first messages, lorebook names, JAR's saved default trigger text; all on by default, like JAR's own capture panel).
   2. **Rebuild with JAR's LLM**: JAR sends the captured text and the card to the extraction LLM set in JAR's **⚙ Settings**, which rebuilds entries with trigger keywords. This uses that service's quota or credit.
 
 A closed lorebook is one its creator chose not to share, and automated capture may break JanitorAI's terms. Capture only records entries that the probe actually triggered, so a large closed lorebook can come back incomplete. Rebuilt keywords are inferred by the LLM: review them, and edit very general ones in Lumiverse's World Info after import.
@@ -112,7 +112,7 @@ Existing chats stay separate. Lumiverse's usual API, prompts, presets and other 
 - **CORS proxy:** accesses the selected local JAR service. Link previews can ask JAR to use its signed-in browser to retrieve the selected character or conversation. Supported service addresses are HTTP loopback (`127.0.0.1`, `localhost` or `[::1]`). Use a trusted JAR service; Lumiverse's proxy follows redirects.
 - **Characters:** saves the explicitly reviewed card through Lumiverse's native importer.
 - **Chats:** saves the reviewed conversation for the character you explicitly choose.
-- **World Books:** saves a reviewed lorebook and, when you choose, attaches it to the character you just imported.
+- **World Books:** saves lorebooks and attaches them to the character you just imported (public ones automatically with the card, rebuilt ones when you choose).
 
 Opening the assistant or Help does not connect, request access or import anything. Link previews may create/link a local JAR record, but do not send chat messages or create native Lumiverse chats/cards. Lorebook capture and rebuild run only after you confirm them for the previewed character: capture sends probe messages through JAR's JanitorAI session, and rebuild sends the captured text to the LLM configured in JAR. The bridge never runs either automatically, never reads JAR settings, credentials or session files, and never passes captured prompts to the browser, only the lorebook entries. Only supported HTTPS JanitorAI character/chat URLs are accepted; tracking parameters are removed.
 
