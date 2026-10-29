@@ -111,12 +111,16 @@ export function isRecordId(value: unknown): value is string {
 // greeting it serves, so JAR can list the first message again as an alternate.
 const watermark = /\s*created by \S+(?: \d{4})?\s*©?\s*on janitorai\.com\s*$/i;
 function greetingKey(value: string) { return value.replace(watermark, '').replace(/\s+/g, ' ').trim(); }
-/** Drop alternates that repeat the first message or another alternate, and probe leftovers like "." with no text. */
+/**
+ * Drop alternates that repeat the first message or another alternate. Placeholders
+ * with no text, like ".", are kept: creators add them as an easily edited greeting.
+ */
 export function distinctGreetings(first: string, alternates: string[]): string[] {
   const seen = new Set([greetingKey(first)]);
   return alternates.filter(greeting => {
     const key = greetingKey(greeting);
-    if (!/[\p{L}\p{N}]/u.test(key) || seen.has(key)) return false;
+    if (!/[\p{L}\p{N}]/u.test(key)) return true;
+    if (seen.has(key)) return false;
     seen.add(key); return true;
   });
 }
