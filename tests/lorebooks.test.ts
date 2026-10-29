@@ -224,7 +224,7 @@ describe('lorebook panel', () => {
       : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined);
     p.ui.show('123-abc'); await settle();
     const callout = p.ui.root.querySelector<HTMLElement>('.jar-lorebook-callout')!;
-    expect(callout.hidden).toBe(false); expect(callout.textContent).toContain('Import the character card to attach it');
+    expect(callout.hidden).toBe(false); expect(callout.textContent).toContain('Import the character card, or choose the character you already have above');
     p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); for (let i = 0; i < 5; i++) await settle();
     expect(posted.map(book => book.name)).toEqual(['MENAGERIE']);
     p.button('Import and attach to Arthur')!.click(); for (let i = 0; i < 5; i++) await settle();
@@ -282,6 +282,32 @@ describe('lorebook panel', () => {
     expect(p.button('Capture hidden card with JAR…')!.hidden).toBe(true);
   });
 
+  test('books can be attached to a character already in the library, found by name', async () => {
+    const posted: any[] = [], searched: string[] = [];
+    globalThis.fetch = (async (url: string, init: any) => {
+      if (url.startsWith('/api/v1/characters/summary')) { const search = new URL(url, 'http://x').searchParams.get('search')!; searched.push(search);
+        return Response.json({ data: search === 'Arthur' ? [{ id: 'char-7', name: 'Arthur' }, { id: 'char-8', name: 'Arthur Two' }] : [{ id: 'char-9', name: 'Morgan' }] }); }
+      const body = JSON.parse(init.body); posted.push(body); return Response.json({ world_book: { id: `book-${posted.length}`, name: body.name }, entry_count: body.entries.length }, { status: 201 });
+    }) as any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) }
+      : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined);
+    p.ui.show('123-abc'); for (let i = 0; i < 3; i++) await settle();
+    expect(searched).toEqual(['Arthur']);
+    const select = p.ui.root.querySelector<HTMLSelectElement>('.jar-lorebook-picker select')!;
+    expect(select.value).toBe('char-7');
+    expect(posted).toHaveLength(0);
+    p.button('Import and attach to Arthur')!.click(); for (let i = 0; i < 5; i++) await settle();
+    expect(posted.map(book => book.name)).toEqual(['2028 | ECLIPSE (rebuilt)']);
+    expect(p.requests.find(r => r.command === 'attach-lorebook')).toMatchObject({ characterId: 'char-7', worldBookId: 'book-1' });
+    const search = p.ui.root.querySelector<HTMLInputElement>('.jar-lorebook-picker input')!; search.value = 'Morgan';
+    p.button('Find')!.click(); for (let i = 0; i < 3; i++) await settle();
+    expect([...select.options].map(o => o.textContent)).toEqual(['Do not attach (World Info only)', 'Arthur', 'Morgan']);
+    select.value = ''; select.dispatchEvent(new select.ownerDocument.defaultView!.Event('change'));
+    expect(p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].textContent).toBe('Import lorebook');
+    p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); await settle();
+    expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-picker')!.hidden).toBe(true);
+  });
+
   test('a public book can still be imported on its own before the card', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;
@@ -312,7 +338,7 @@ describe('lorebook panel', () => {
   });
 
   test('without World Books permission nothing is posted', async () => {
-    let fetched = false; globalThis.fetch = (async () => { fetched = true; return Response.json({}); }) as any;
+    let fetched = false; globalThis.fetch = (async (url: string) => { if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] }); fetched = true; return Response.json({}); }) as any;
     const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) } : undefined, ['cors_proxy']);
     p.ui.show('123-abc'); await settle();
     p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].click(); await settle();

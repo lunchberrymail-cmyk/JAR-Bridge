@@ -26,6 +26,7 @@ const MAX_PREVIEW_ENTRIES = 200;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; }
 function button(text: string, click: () => void, cls = 'jar-button') { const node = el('button', cls, text); node.type = 'button'; node.addEventListener('click', click); return node; }
+function option(text: string, value: string) { const node = el('option', '', text); node.value = value; return node; }
 function isAbort(error: unknown) { return error instanceof Error && error.name === 'AbortError'; }
 function keys(value: unknown): string[] { return Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : []; }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -38,6 +39,9 @@ const confirmText: Record<Action, string> = {
 /** Explicit lorebook import, capture and rebuild for the previewed JAR character. */
 export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>, options: LorebookOptions) {
   let recordId: string | undefined, data: JarLorebooksResult | undefined, character: ImportedCharacter | undefined;
+  /** A character already in the library, chosen to attach books to when the card was not imported here. */
+  let existing: ImportedCharacter | undefined, matches: ImportedCharacter[] = [], lookup = 0;
+  const attachTarget = () => character || existing;
   let hiddenCard = false, busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
   const imported = new Map<string, ImportedLorebook>();
   /** Public books already tried automatically for the imported character; a failure is not retried on its own. */
@@ -51,13 +55,24 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   // Rebuilt books are not attached automatically, so they get their own prompt above the list.
   const callout = el('div', 'jar-lorebook-callout'); callout.hidden = true; callout.setAttribute('role', 'group'); callout.setAttribute('aria-label', 'Rebuilt lorebook');
   const calloutText = el('p', '');
-  const calloutButton = button('', () => { const book = pendingRebuilt(); if (book) void importBook(book, !!character); }, 'jar-button jar-primary');
+  const calloutButton = button('', () => { const book = pendingRebuilt(); if (book) void importBook(book, !!attachTarget()); }, 'jar-button jar-primary');
   callout.append(calloutText, calloutButton);
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
   const noticeRebuild = button('Rebuild with JAR’s LLM…', () => ask('rebuild'), 'jar-button jar-primary');
   notice.append(noticeTitle, noticeList, noticeRebuild);
+  // Lets books be attached to a character imported earlier, outside this session.
+  const picker = el('div', 'jar-lorebook-picker'); picker.hidden = true; picker.setAttribute('role', 'group'); picker.setAttribute('aria-label', 'Attach lorebooks to a character');
+  const pickerLabel = el('label', 'jar-field');
+  const pickerSelect = el('select', 'jar-input');
+  pickerSelect.addEventListener('change', () => { existing = matches.find(item => item.id === pickerSelect.value); render(); });
+  pickerLabel.append(el('span', 'jar-help', 'Already have this character in Lumiverse? Attach lorebooks to it'), pickerSelect);
+  const pickerSearch = el('input', 'jar-input'); pickerSearch.type = 'search'; pickerSearch.placeholder = 'Search your characters'; pickerSearch.setAttribute('aria-label', 'Search your characters');
+  pickerSearch.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void findCharacters(pickerSearch.value); } });
+  const pickerFind = button('Find', () => { void findCharacters(pickerSearch.value); });
+  const pickerRow = el('div', 'jar-actions'); pickerRow.append(pickerSearch, pickerFind);
+  picker.append(pickerLabel, pickerRow);
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -98,7 +113,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   waitRow.append(waitText, stop);
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
-  root.append(heading, intro, refresh, notice, callout, books, closed, waitRow, status);
+  root.append(heading, intro, refresh, picker, notice, callout, books, closed, waitRow, status);
   function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
@@ -112,12 +127,17 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     const pending = pendingRebuilt();
     callout.hidden = !pending;
     if (pending) {
-      calloutText.textContent = character
-        ? `${pending.title} was rebuilt from the closed lorebook. It is not attached automatically because its keywords were inferred by an LLM; review it below, then add it to ${character.name}.`
-        : `${pending.title} was rebuilt from the closed lorebook. Import the character card to attach it, or import it on its own.`;
-      calloutButton.textContent = character ? `Import and attach to ${character.name}` : 'Import rebuilt lorebook';
+      const target = attachTarget();
+      calloutText.textContent = target
+        ? `${pending.title} was rebuilt from the closed lorebook. It is not attached automatically because its keywords were inferred by an LLM; review it below, then add it to ${target.name}.`
+        : `${pending.title} was rebuilt from the closed lorebook. Import the character card, or choose the character you already have above, to attach it. You can also import it on its own.`;
+      calloutButton.textContent = target ? `Import and attach to ${target.name}` : 'Import rebuilt lorebook';
     }
     calloutButton.disabled = locked;
+    picker.hidden = !!character || !data || !data.books.length;
+    pickerSelect.replaceChildren(option('Do not attach (World Info only)', ''), ...matches.map(item => option(item.name, item.id)));
+    pickerSelect.value = existing?.id || '';
+    pickerSelect.disabled = pickerSearch.disabled = pickerFind.disabled = locked;
     renderNotice(locked);
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
@@ -192,9 +212,9 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     card.append(list);
     if (book.kind === 'rebuilt') card.append(el('p', 'jar-help', 'Keywords were inferred by an LLM. Very general keywords can make an entry trigger too often; edit them in Lumiverse’s World Info after import.'));
     const row = el('div', 'jar-actions jar-lorebook-actions');
-    const attach = el('label', 'jar-checkbox'); const attachInput = el('input'); attachInput.type = 'checkbox'; attachInput.checked = !!character;
-    attach.append(attachInput, el('span', '', character ? `Attach to ${character.name}` : 'Import the character card to attach this lorebook to it'));
-    attachInput.disabled = locked || !character || !!done; attach.hidden = !!done;
+    const attach = el('label', 'jar-checkbox'); const attachInput = el('input'); attachInput.type = 'checkbox'; const target = attachTarget(); attachInput.checked = !!target;
+    attach.append(attachInput, el('span', '', target ? `Attach to ${target.name}` : 'Import the character card, or choose your character above, to attach this lorebook'));
+    attachInput.disabled = locked || !target || !!done; attach.hidden = !!done;
     const go = button(done ? 'Imported' : 'Import lorebook', () => { void importBook(book, attachInput.checked); }, 'jar-button jar-primary');
     go.disabled = locked || !!done || unsure;
     row.append(attach, go);
@@ -216,6 +236,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       const result = await options.client.request('lorebooks', options.getBaseUrl(), id) as JarLorebooksResult;
       if (disposed || token !== generation) return;
       data = result; message('');
+      if (!character && !existing && result.books.length) void findCharacters(result.characterName, true);
     } catch (error) { if (!disposed && token === generation) message(isAbort(error) ? '' : error instanceof Error ? error.message : 'Could not read lorebooks from JAR.', isAbort(error) ? '' : 'error'); }
     finally { if (!disposed && token === generation) { loading = false; render(); autoImport(); } }
   }
@@ -227,6 +248,23 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (!next) return;
     autoTried.add(bookKey(next));
     void importBook(next, true).then(autoImport);
+  }
+
+  /** Search the library by name. With `preselect`, an exact name match is chosen. Never imports or attaches by itself. */
+  async function findCharacters(search: string, preselect = false) {
+    if (disposed) return;
+    const token = ++lookup;
+    try {
+      const query = new URLSearchParams({ limit: '20', offset: '0', search: search.trim(), sort: 'name', direction: 'asc' });
+      const response = await fetch(`/api/v1/characters/summary?${query}`, { credentials: 'same-origin', signal: abort.signal });
+      if (!response.ok) throw new Error();
+      const rows = (await response.json() as { data?: unknown }).data;
+      if (disposed || token !== lookup || !Array.isArray(rows)) return;
+      matches = rows.filter((row): row is ImportedCharacter => !!row && typeof row.id === 'string' && typeof row.name === 'string').map(row => ({ id: row.id, name: row.name }));
+      if (existing && !matches.some(item => item.id === existing!.id)) matches.unshift(existing);
+      if (preselect && !existing) existing = matches.find(item => item.name.trim().toLowerCase() === search.trim().toLowerCase());
+      render();
+    } catch (error) { if (!isAbort(error) && !disposed && token === lookup) message('Could not search your character library.', 'warning'); }
   }
 
   function ask(action: Action) { if (disposed || busy || outerBusy || !data) return; confirming = action; render(); confirmYes.focus?.({ preventScroll: true }); }
@@ -272,7 +310,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   async function importBook(book: JarLorebook, attach: boolean) {
     const key = bookKey(book);
     if (disposed || busy || outerBusy || imported.has(key) || uncertain.has(key)) return;
-    const token = ++generation, target = attach ? character : undefined;
+    const token = ++generation, target = attach ? attachTarget() : undefined;
     setBusy(true); message(`Importing ${book.title}…`);
     try {
       const result = await importNativeLorebook(ctx, nativeLorebook(book), () => !disposed && token === generation, abort.signal);
@@ -297,7 +335,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
-      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); existing = undefined; matches = []; lookup++; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },

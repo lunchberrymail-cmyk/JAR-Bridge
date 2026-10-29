@@ -89,6 +89,8 @@ After you preview a JanitorAI character link, a **Lorebooks** section lists what
 
   A rebuilt lorebook is not attached automatically. It appears in a highlighted box at the top of the Lorebooks section, and after you import the card, **Import and attach to <character>** adds it in one click.
 
+  Imported the character earlier? **Already have this character in Lumiverse? Attach lorebooks to it** looks up your library by the character's name and preselects an exact match; **Find** searches for another one. Books you import then attach to that character. Choosing a character never imports anything by itself.
+
 A closed lorebook is one its creator chose not to share, and automated capture may break JanitorAI's terms. Capture only records entries that the probe actually triggered, so a large closed lorebook can come back incomplete. Rebuilt keywords are inferred by the LLM: review them, and edit very general ones in Lumiverse's World Info after import.
 
 Capture and rebuild can take longer than Lumiverse's 30-second connection limit. JAR keeps working after the connection closes, so the importer checks the character's JAR record every few seconds for up to 10 minutes. **Stop waiting** stops checking; JAR may still finish, and **Check JAR for lorebooks** reads the result later.
