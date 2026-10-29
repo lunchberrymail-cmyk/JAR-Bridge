@@ -64,17 +64,14 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const calloutWithCard = button('Import card and attach', () => { if (pendingRebuilt() && options.importCard?.()) { rebuiltAfterCard = true; render(); } }, 'jar-button');
   const calloutRow = el('div', 'jar-actions'); calloutRow.append(calloutButton, calloutWithCard);
   callout.append(calloutText, calloutRow);
-  // A banner for the card preview: closed lorebooks are not part of the card, so
-  // their state is shown where the card is reviewed, with a jump to the steps.
-  const banner = el('div', 'jar-closed-banner'); banner.hidden = true; banner.setAttribute('role', 'status');
-  const bannerIcon = el('span', 'jar-closed-banner-icon'); bannerIcon.setAttribute('aria-hidden', 'true');
-  bannerIcon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
-  const bannerBody = el('div', 'jar-closed-banner-body');
-  const bannerTitle = el('strong', ''); const bannerState = el('span', 'jar-closed-banner-state'); const bannerText = el('p', '');
-  const bannerHead = el('div', 'jar-closed-banner-head'); bannerHead.append(bannerTitle, bannerState);
-  const bannerGo = button('Go to lorebooks ↓', () => { root.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); (pendingRebuilt() ? calloutButton : captureButton).focus?.({ preventScroll: true }); }, 'jar-link');
-  bannerBody.append(bannerHead, bannerText, bannerGo);
-  banner.append(bannerIcon, bannerBody);
+  // Every lorebook and where it stands, shown beside the card name: closed books
+  // are not part of the card, so they must be visible where the card is reviewed.
+  const banner = el('div', 'jar-book-status'); banner.hidden = true; banner.setAttribute('role', 'status'); banner.setAttribute('aria-label', 'Lorebooks for this character');
+  const bannerRows = el('ul', '');
+  const bannerGo = button('Lorebook details ↓', () => { root.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); (pendingRebuilt() ? calloutButton : captureButton).focus?.({ preventScroll: true }); }, 'jar-link');
+  banner.append(bannerRows, bannerGo);
+  /** Characters a book was attached to, by book key. */
+  const attachedTo = new Map<string, string>();
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
@@ -201,24 +198,27 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   }
 
   function renderBanner() {
-    const count = data?.closedTitles.length || 0;
-    banner.hidden = !data || !count || hiddenCard;
+    const publicBooks = data?.books.filter(book => book.kind === 'public') || [];
+    banner.hidden = !data || hiddenCard || !(publicBooks.length || data.closedTitles.length);
     if (!data || banner.hidden) return;
-    const rebuilt = data.books.filter(book => book.kind === 'rebuilt');
-    const done = rebuilt.length > 0 && rebuilt.every(book => imported.has(bookKey(book)));
-    const target = attachTarget();
-    const [tone, state, text] = !rebuilt.length && !data.allowProxy
-      ? ['blocked', 'Cannot be captured', 'The creator does not allow proxies, so JAR cannot capture it. The card imports without it.']
-      : !data.captured && !rebuilt.length
-        ? ['missing', 'Not captured', 'It is not part of the card. Capture it with JAR, then rebuild it, to bring it into Lumiverse.']
-        : !rebuilt.length
-          ? ['missing', 'Captured, not rebuilt', 'JAR has the captured text. Rebuild it with JAR’s LLM before it can be imported.']
-          : done
-            ? ['done', 'Imported', 'The rebuilt copy is in your World Info. Review its keywords there.']
-            : ['ready', 'Rebuilt, ready to import', target ? `Import it and attach it to ${target.name}.` : 'Import it with the card, or on its own.'];
-    banner.dataset.tone = tone;
-    bannerTitle.textContent = count === 1 ? `Closed lorebook: ${data.closedTitles[0]}` : `${count} closed lorebooks: ${data.closedTitles.join(', ')}`;
-    bannerState.textContent = state; bannerText.textContent = text;
+    const done = (book: JarLorebook): [string, string] | undefined => {
+      const name = attachedTo.get(bookKey(book));
+      return name ? ['done', `Attached to ${name}`] : imported.has(bookKey(book)) ? ['done', 'In World Info'] : undefined;
+    };
+    const rows: [string, string, string][] = publicBooks.map(book => [book.title, ...(done(book) || ['open', 'Open · imports with the card'])] as [string, string, string]);
+    const rebuilt = data.books.find(book => book.kind === 'rebuilt');
+    const rebuiltDone = rebuilt && done(rebuilt);
+    const [tone, state] = rebuiltDone ? [rebuiltDone[0], `Rebuilt · ${rebuiltDone[1]}`]
+      : rebuilt ? ['ready', 'CLOSED · rebuilt, ready to import']
+      : !data.allowProxy ? ['closed', 'CLOSED · cannot be captured']
+        : data.captured ? ['partial', 'CLOSED · captured, not rebuilt'] : ['closed', 'CLOSED'];
+    for (const title of data.closedTitles) rows.push([title, tone, state]);
+    bannerRows.replaceChildren(...rows.map(([title, rowTone, label]) => {
+      const row = el('li', ''); row.dataset.tone = rowTone;
+      row.append(el('span', 'jar-book-status-name', title), el('span', 'jar-book-status-state', label));
+      return row;
+    }));
+    bannerGo.hidden = !data.closedTitles.length;
   }
 
   function renderNotice(locked: boolean) {
@@ -365,6 +365,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (!target) { message(`Imported ${result.entryCount} entries into World Info.`, 'success'); return; }
       try {
         await options.client.request('attach-lorebook', options.getBaseUrl(), undefined, undefined, undefined, { characterId: target.id, worldBookId: result.id });
+        attachedTo.set(key, target.name);
         if (!disposed && token === generation) message(`Imported ${result.entryCount} entries and attached them to ${target.name}.`, 'success');
       } catch (error) {
         if (!isAbort(error) && !disposed && token === generation) message(`Imported into World Info, but not attached: ${error instanceof Error ? error.message : 'attachment failed.'} Attach it from the character’s lorebook settings.`, 'warning');

@@ -365,7 +365,7 @@ describe('lorebook panel', () => {
   });
 });
 
-describe('closed lorebook banner', () => {
+describe('lorebook status beside the card', () => {
   function banner(result: any) {
     const dom = new JSDOM('<body></body>', { url: 'http://localhost:7860' }); globalThis.document = dom.window.document;
     let receive: (payload: unknown) => void = () => {};
@@ -377,23 +377,40 @@ describe('closed lorebook banner', () => {
     document.body.append(ui.banner, ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     return ui;
   }
-  test('the banner names the closed books and follows their state', async () => {
+  const rows = (ui: any) => [...ui.banner.querySelectorAll('li')].map((li: any) => [li.dataset.tone, li.textContent]);
+  test('each lorebook is listed beside the card with its state', async () => {
     const states: [any, string, string][] = [
-      [record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined }), 'missing', 'Not captured'],
-      [record({ privateLorebookReconstruction: undefined }), 'missing', 'Captured, not rebuilt'],
-      [record(), 'ready', 'Rebuilt, ready to import'],
-      [record({ meta: { allow_proxy: false }, capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined }), 'blocked', 'Cannot be captured'],
+      [record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined }), 'closed', '2028 | ECLIPSECLOSED'],
+      [record({ privateLorebookReconstruction: undefined }), 'partial', '2028 | ECLIPSECLOSED · captured, not rebuilt'],
+      [record(), 'ready', '2028 | ECLIPSECLOSED · rebuilt, ready to import'],
+      [record({ meta: { allow_proxy: false }, capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined }), 'closed', '2028 | ECLIPSECLOSED · cannot be captured'],
     ];
-    for (const [input, tone, state] of states) {
+    for (const [input, tone, text] of states) {
       const ui = banner(toLorebooks(input)); ui.show('123-abc'); await settle();
-      expect(ui.banner.hidden).toBe(false); expect(ui.banner.dataset.tone).toBe(tone);
-      expect(ui.banner.textContent).toContain('Closed lorebook: 2028 | ECLIPSE'); expect(ui.banner.textContent).toContain(state);
+      expect(ui.banner.hidden).toBe(false);
+      expect(rows(ui)).toEqual([['open', 'MENAGERIEOpen · imports with the card'], [tone, text]]);
       ui.hide(); expect(ui.banner.hidden).toBe(true);
     }
   });
-  test('no banner without closed lorebooks or for an uncaptured hidden card', async () => {
-    const open = banner(toLorebooks(record({ publicLorebooks: [{ id: 'pub-1', title: 'OPEN', accessible: true, worldInfo: { entries: { 0: entry('Lore') } } }] })));
-    open.show('123-abc'); await settle(); expect(open.banner.hidden).toBe(true);
+  test('imported books show where they went', async () => {
+    globalThis.fetch = (async (url: string, init: any) => url.startsWith('/api/v1/characters/summary') ? Response.json({ data: [] })
+      : Response.json({ world_book: { id: 'book-1', name: JSON.parse(init.body).name }, entry_count: 1 }, { status: 201 })) as any;
+    const dom = new JSDOM('<body></body>', { url: 'http://localhost:7860' }); globalThis.document = dom.window.document;
+    let receive: (payload: unknown) => void = () => {};
+    const ctx: any = { permissions: { getGranted: async () => ['cors_proxy', 'characters', 'world_books'] }, onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
+      sendToBackend: (request: any) => { const result = request.command === 'lorebooks' ? toLorebooks(record()) : request.command === 'attach-lorebook' ? { characterId: request.characterId, worldBookIds: [request.worldBookId] } : undefined;
+        if (result) setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result }), 0); } };
+    const client = createJarClient(ctx);
+    const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
+    document.body.append(ui.banner, ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
+    ui.show('123-abc'); await settle();
+    ui.setCharacter({ id: 'char-1', name: 'Arthur' }); for (let i = 0; i < 5; i++) await settle();
+    [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Import and attach to Arthur')!.click(); for (let i = 0; i < 5; i++) await settle();
+    expect(rows(ui)).toEqual([['done', 'MENAGERIEAttached to Arthur'], ['done', '2028 | ECLIPSERebuilt · Attached to Arthur']]);
+  });
+  test('no list without any lorebook, or for an uncaptured hidden card', async () => {
+    const none = banner(toLorebooks(record({ publicLorebooks: [], privateLorebookReconstruction: undefined, capturedAt: undefined, payload: null })));
+    none.show('123-abc'); await settle(); expect(none.banner.hidden).toBe(true);
     const hidden = banner(toLorebooks(record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined })));
     hidden.show('123-abc', true); await settle(); expect(hidden.banner.hidden).toBe(true);
   });

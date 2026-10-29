@@ -176,7 +176,7 @@ export function setup(ctx: SpindleFrontendContext) {
     importCard: () => { if (disposed || busy || mode !== 'archive' || !selected || imported || uncertain) return false; void runImport(); return true; },
     canImportCard: () => mode === 'archive' && !!selected && !imported && !uncertain,
     onHiddenCardCaptured: id => { if (!disposed && mode === 'archive' && hiddenRecordId) void select({ id, name: 'Recovered card', source: 'JanitorAI link', ts: Date.now() }); } });
-  previewTop.after(lorebooks.banner);
+  previewTop.append(lorebooks.banner);
   historyPanel.append(chatHistory.root);
   root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions, lorebooks.root); tab.root.append(root);
   /** Lorebooks belong to the previewed JAR record; reading them never captures anything. */

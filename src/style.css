@@ -145,19 +145,18 @@
 .jar-cleanup-confirm { border:1px solid #b85a5a; background:#3a2626; border-radius:9px; padding:12px; margin-top:12px; color:#f1d6d6; font-size:12px; }
 .jar-cleanup-confirm[hidden] { display:none; }
 .jar-cleanup-confirm ul { margin:0 0 10px; padding-left:18px; }
-.jar-closed-banner { display:flex; gap:12px; align-items:flex-start; margin:14px 0 4px; padding:12px 14px; border-radius:10px; border:1px solid; border-left-width:5px; }
-.jar-closed-banner[hidden] { display:none; }
-.jar-closed-banner-icon { flex:none; display:flex; width:36px; height:36px; border-radius:50%; align-items:center; justify-content:center; }
-.jar-closed-banner-body { min-width:0; flex:1; }
-.jar-closed-banner-head { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
-.jar-closed-banner-head strong { font-size:13px; overflow-wrap:anywhere; }
-.jar-closed-banner-state { font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 8px; border-radius:999px; }
-.jar-closed-banner p { margin:4px 0 6px; font-size:12px; line-height:1.5; }
-.jar-closed-banner[data-tone="missing"] { background:#3d3022; border-color:#d39a52; color:#f3dfc4; }
-.jar-closed-banner[data-tone="missing"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="missing"] .jar-closed-banner-state { background:#d39a52; color:#2a1d0e; }
-.jar-closed-banner[data-tone="blocked"] { background:#3a2626; border-color:#c46a6a; color:#f1d6d6; }
-.jar-closed-banner[data-tone="blocked"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="blocked"] .jar-closed-banner-state { background:#c46a6a; color:#2a1212; }
-.jar-closed-banner[data-tone="ready"] { background:#342b48; border-color:#b9a0e8; color:#ece2ff; }
-.jar-closed-banner[data-tone="ready"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="ready"] .jar-closed-banner-state { background:#b9a0e8; color:#21182c; }
-.jar-closed-banner[data-tone="done"] { background:#24352b; border-color:#6fbf8a; color:#d6f0de; }
-.jar-closed-banner[data-tone="done"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="done"] .jar-closed-banner-state { background:#6fbf8a; color:#10261a; }
+.jar-preview-top { flex-wrap:wrap; }
+.jar-book-status { margin-left:auto; min-width:0; max-width:100%; padding:10px 14px; border:1px solid #ffffff1f; border-radius:10px; background:#00000026; }
+.jar-book-status[hidden] { display:none; }
+.jar-book-status ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.jar-book-status li { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline; font-size:15px; font-weight:700; line-height:1.3; }
+.jar-book-status-name { overflow-wrap:anywhere; }
+.jar-book-status-state { font-size:12px; font-weight:800; letter-spacing:.03em; }
+.jar-book-status-state::before { content:'– '; }
+.jar-book-status li[data-tone="done"] { color:#5fd38a; }
+.jar-book-status li[data-tone="open"] { color:#9fd6b3; }
+.jar-book-status li[data-tone="closed"] { color:#ff6b6b; }
+.jar-book-status li[data-tone="partial"] { color:#f0a85a; }
+.jar-book-status li[data-tone="ready"] { color:#c8b2f5; }
+.jar-book-status .jar-link { margin-top:6px; font-size:12px; }
+@media (max-width:560px) { .jar-book-status { margin-left:0; width:100%; } }
