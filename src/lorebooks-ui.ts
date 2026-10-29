@@ -142,6 +142,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     }
     calloutButton.disabled = locked;
     calloutWithCard.hidden = !!attachTarget() || !options.canImportCard?.(); calloutWithCard.disabled = locked;
+    // Attaching to the card is the usual goal, so it leads when available.
+    calloutWithCard.className = calloutWithCard.hidden ? 'jar-button' : 'jar-button jar-primary';
+    calloutButton.className = calloutWithCard.hidden ? 'jar-button jar-primary' : 'jar-button';
+    if (calloutRow.firstChild !== (calloutWithCard.hidden ? calloutButton : calloutWithCard)) calloutRow.prepend(calloutWithCard.hidden ? calloutButton : calloutWithCard);
     picker.hidden = !!character || !data || !data.books.length;
     pickerSelect.replaceChildren(option('Do not attach (World Info only)', ''), ...matches.map(item => option(item.name, item.id)));
     pickerSelect.value = existing?.id || '';
