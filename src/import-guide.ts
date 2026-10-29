@@ -167,7 +167,7 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
   ]));
   root.append(detail('My card is incomplete', [
     'JAR’s extract button reads the available public details. A hidden definition or a linked conversation can leave a name-only character record. Check for a completed definition before importing, or use a character-card export you already have.',
-    'JAR has a separate extract private card recovery tool. That tool has its own setup and can create a JanitorAI chat and send probes. Moving a completed saved card and its chat history here does not require configuring an extraction LLM.',
+    'For a hidden definition, the link preview offers Capture hidden card with JAR. After you confirm, JAR creates a temporary JanitorAI chat, sends probe messages and recovers the definition from the prompt; use a throwaway account. Recovering a card does not need JAR’s extraction LLM; only rebuilding closed lorebooks does.',
   ]));
   root.append(detail('Can’t connect, or can’t see my chat?', [
     'Can’t connect? Start JAR and keep its console open on the same computer as the Lumiverse server. The default address is http://127.0.0.1:4577. Change the address only if your JAR uses another port.',

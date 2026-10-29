@@ -167,7 +167,7 @@ describe('JAR lorebook backend commands', () => {
 describe('lorebook panel', () => {
   const original = { document: globalThis.document, fetch: globalThis.fetch };
   afterEach(() => { globalThis.document = original.document; globalThis.fetch = original.fetch; });
-  function panel(reply: (request: any) => any, grants = ['cors_proxy', 'characters', 'world_books']) {
+  function panel(reply: (request: any) => any, grants = ['cors_proxy', 'characters', 'world_books'], onHiddenCardCaptured?: () => void) {
     const dom = new JSDOM('<body></body>', { url: 'http://localhost:7860' }); globalThis.document = dom.window.document;
     const requests: any[] = []; let receive: (payload: unknown) => void = () => {};
     const ctx: any = {
@@ -176,7 +176,7 @@ describe('lorebook panel', () => {
       sendToBackend: (request: any) => { requests.push(request); if (request.command === 'cancel') return; const result = reply(request); if (result !== undefined) setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, ...result }), 0); },
     };
     const client = createJarClient(ctx);
-    const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, pollMs: 1 });
+    const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, pollMs: 1, onHiddenCardCaptured });
     document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text);
     return { ui, requests, button };
@@ -231,6 +231,30 @@ describe('lorebook panel', () => {
     expect(posted.map(book => book.name)).toEqual(['MENAGERIE', '2028 | ECLIPSE (rebuilt)']);
     expect(p.requests.filter(r => r.command === 'attach-lorebook').map(r => r.worldBookId)).toEqual(['book-1', 'book-2']);
     expect(callout.hidden).toBe(true);
+  });
+
+  test('a hidden card offers one capture for the definition and lorebooks, then asks for the card again', async () => {
+    let recovered = 0;
+    const uncaptured = record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined });
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(uncaptured) }
+      : request.command === 'capture-lorebook' ? { result: { state: 'done', lorebooks: toLorebooks(record({ capturedAt: 300, privateLorebookReconstruction: undefined })) } } : undefined,
+      undefined, () => { recovered++; });
+    p.ui.show('123-abc', true); await settle();
+    expect(p.ui.root.textContent).toContain('Hidden character definition');
+    expect(p.ui.root.textContent).toContain('collects its closed lorebooks (2028 | ECLIPSE)');
+    expect(p.button('Rebuild with JAR’s LLM…')?.hidden ?? true).toBe(true);
+    p.button('Capture hidden card with JAR…')!.click(); await settle();
+    expect(p.ui.root.textContent).toContain('also recovers the hidden character definition');
+    p.button('Yes, capture')!.click(); for (let i = 0; i < 5; i++) await settle();
+    expect(p.requests.find(r => r.command === 'capture-lorebook')).toMatchObject({ recordId: '123-abc' });
+    expect(recovered).toBe(1); expect(p.ui.root.textContent).toContain('Loading the recovered card');
+  });
+
+  test('a hidden card whose creator forbids proxies offers no capture', async () => {
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ meta: { allow_proxy: false }, capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined })) } : undefined);
+    p.ui.show('123-abc', true); await settle();
+    expect(p.ui.root.textContent).toContain('cannot recover it');
+    expect(p.button('Capture hidden card with JAR…')!.hidden).toBe(true);
   });
 
   test('a public book can still be imported on its own before the card', async () => {

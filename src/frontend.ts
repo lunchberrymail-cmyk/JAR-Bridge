@@ -33,6 +33,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const uncertainSources = new Set<string>();
   const recordAliases = new Map<string, string>();
   let pendingHistory: JarHistoryResult | undefined;
+  /** JAR record of a previewed character whose creator hides its definition. */
+  let hiddenRecordId: string | undefined;
   const abort = new AbortController();
   const client = createJarClient(ctx);
   const removeStyle = ctx.dom.addStyle(styles);
@@ -82,7 +84,9 @@ export function setup(ctx: SpindleFrontendContext) {
   sourceField.append(el('span', 'jar-label', 'JanitorAI character or chat link'), sourceLink);
   const loadLink = button('Preview link', () => { void previewLink(); }, 'jar-button jar-primary');
   sourceLink.addEventListener('input', updateControls); sourceLink.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void previewLink(); } });
-  const sourceRow = el('div', 'jar-connect'); sourceRow.append(sourceField, loadLink);
+  const clearLink = button('Clear', () => { if (disposed || busy) return; generation++; client.cancel(); sourceLink.value = ''; resetSelection(); message(''); updateControls(); sourceLink.focus({ preventScroll: true }); }, 'jar-button');
+  clearLink.setAttribute('aria-label', 'Clear the link field');
+  const sourceRow = el('div', 'jar-connect'); sourceRow.append(sourceField, loadLink, clearLink);
   linkPanel.append(sourceRow, el('p', 'jar-help', 'JAR must be running and signed in on the computer hosting Lumiverse. Phone or tablet without JAR? Use a downloaded card file; the Help guide explains how.'));
   const advancedAddress = el('details', 'jar-address-details'); advancedAddress.append(el('summary', '', 'Change JAR address'), addressField);
   const connectionHint = el('p', 'jar-help', 'Load cards already stored by this copy of JAR. A fresh download may have no saved cards yet.');
@@ -157,11 +161,16 @@ export function setup(ctx: SpindleFrontendContext) {
     onNavigate: () => window?.dismiss(),
   });
   const guide = createImportGuide({ start: next => switchMode(next) });
-  const lorebooks = createLorebooks(ctx, { client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); } });
+  const lorebooks = createLorebooks(ctx, { client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); },
+    // The capture saved a recovered definition in JAR; preview the same link to load it.
+    onHiddenCardCaptured: () => { if (!disposed && mode === 'archive' && hiddenRecordId) void previewLink(); } });
   historyPanel.append(chatHistory.root);
   root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions, lorebooks.root); tab.root.append(root);
   /** Lorebooks belong to the previewed JAR record; reading them never captures anything. */
-  function syncLorebooks() { if (!disposed && !busy && mode === 'archive' && selected) { lorebooks.show(selected.recordId); lorebooks.setCharacter(imported); } }
+  function syncLorebooks() {
+    if (disposed || busy || mode !== 'archive') return;
+    if (selected) { lorebooks.show(selected.recordId); lorebooks.setCharacter(imported); } else if (hiddenRecordId) lorebooks.show(hiddenRecordId, true);
+  }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = guideVisible || mode === 'history' || !text; }
   async function navigate(target: { kind: 'drawer_tab' | 'route'; id: string }, params?: Record<string, string>) {
@@ -180,7 +189,7 @@ export function setup(ctx: SpindleFrontendContext) {
   function updateControls() {
     if (disposed) return;
     for (const node of [address, connect, loadSaved, refresh, search, choose, fileInput, archiveTab, fileTab, historyTab, noAvatarInput, sourceLink]) node.disabled = busy;
-    loadLink.disabled = busy || !sourceLink.value.trim();
+    loadLink.disabled = busy || !sourceLink.value.trim(); clearLink.disabled = busy || !sourceLink.value;
     useExisting.hidden = !pendingHistory; useExisting.disabled = busy;
     retry.hidden = !uncertain; retry.disabled = busy;
     importButton.disabled = busy || uncertain || !!imported || !(mode === 'archive' ? selected : chosenFile);
@@ -193,11 +202,11 @@ export function setup(ctx: SpindleFrontendContext) {
     archivePanel.hidden = guideVisible || mode !== 'archive'; filePanel.hidden = guideVisible || mode !== 'file'; historyPanel.hidden = guideVisible || mode !== 'history';
     actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile); status.hidden = guideVisible || mode === 'history' || !status.textContent;
     preview.hidden = guideVisible || mode === 'history' || !selected;
-    lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !selected;
+    lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !(selected || hiddenRecordId);
     continueHistory.hidden = !returnToHistory || !connected; continueHistory.disabled = busy;
     root.setAttribute('aria-busy', String(busy));
   }
-  function resetSelection() { lorebooks.hide(); selected = undefined; chosenFile = undefined; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
+  function resetSelection() { lorebooks.hide(); selected = undefined; hiddenRecordId = undefined; chosenFile = undefined; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
   function showGuide() {
     if (disposed || busy) return;
     generation++; client.cancel(); chatHistory.deactivate(); guideVisible = true; updateControls();
@@ -248,7 +257,10 @@ export function setup(ctx: SpindleFrontendContext) {
         message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character is already imported. You can continue to its history.' : pendingHistory ? 'Card and conversation loaded. Review and import the card, then choose Next: import chat history. No need to paste the link again.' : 'Review the card, then choose Import to Lumiverse.');
       } else if (result.history) {
         historyStart = { source: 'jar', recordId: result.recordId, preparedHistory: result.history, character: importedSources.get(recordKey(result.recordId)), notice: result.warning || 'The conversation loaded, but its character card is incomplete. Choose its existing Lumiverse character, or get a card first.', characterUrl: result.characterUrl };
-      } else message(result.warning || 'This link did not provide a complete character card. Try a downloaded card file instead.', 'warning');
+      } else {
+        if (result.hiddenCard) hiddenRecordId = result.recordId;
+        message(result.warning || 'This link did not provide a complete character card. Try a downloaded card file instead.', 'warning');
+      }
     } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'Could not preview this link. Check JAR and its JanitorAI sign-in.', 'error'); }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
     if (!historyStart && token === generation) syncLorebooks();

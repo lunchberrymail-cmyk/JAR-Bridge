@@ -135,9 +135,27 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               if (record.id !== inspected.id || characterUrl(record) !== link.sourceUrl) throw new Error('JAR returned a different character for this link. Nothing was imported.');
               card = availableCard(record);
             }
+            if (!card) {
+              // Each preview makes a new JAR record. A hidden definition JAR recovered
+              // by an earlier capture lives on an older record of the same character.
+              // Only same-named records are read, and only one for this exact link is
+              // used. The lookup is best-effort: on failure the capture step is offered.
+              const name = typeof record.characterName === 'string' ? record.characterName : '';
+              try {
+                const summaries = name ? normalizeSummaries(await ownedGet({ kind: 'captures' })) : [];
+                for (const item of summaries.filter(item => item.id !== record!.id && item.name === name).sort((a, b) => b.ts - a.ts).slice(0, 5)) {
+                  if (!current()) return;
+                  const older = object(await ownedGet({ kind: 'card', recordId: item.id }));
+                  if (older.id !== item.id || characterUrl(older) !== link.sourceUrl) continue;
+                  const recovered = availableCard(older);
+                  if (recovered) { record = older; card = recovered; break; }
+                }
+              } catch { /* keep the hidden-card result */ }
+              if (!current()) return;
+            }
             rememberCard(record, card);
             result = { kind: 'character', sourceUrl: link.sourceUrl, recordId: record.id as string, characterUrl: link.sourceUrl,
-              ...(card ? { card } : { warning: 'A complete character definition is not available from this link. Download a PNG or JSON card and choose Import card file. No hidden-card extraction was attempted.' }) } satisfies JarLinkResult;
+              ...(card ? { card } : { hiddenCard: true, warning: 'This character’s creator hides its definition, so the link preview has only its public details. JAR can recover it with a capture below, or use a downloaded card file.' }) } satisfies JarLinkResult;
           } else {
             const linked = object(await ownedGet({ kind: 'link-chat', sourceUrl: link.sourceUrl }));
             if (!current()) return;

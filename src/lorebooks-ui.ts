@@ -16,6 +16,8 @@ export interface LorebookOptions {
   /** Lorebook work shares the importer's single JAR request slot. */
   onBusy: (busy: boolean) => void;
   pollMs?: number;
+  /** A capture for a hidden-definition character finished; the card can be read again. */
+  onHiddenCardCaptured?: () => void;
 }
 
 const POLL_MS = 5000;
@@ -36,7 +38,7 @@ const confirmText: Record<Action, string> = {
 /** Explicit lorebook import, capture and rebuild for the previewed JAR character. */
 export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>, options: LorebookOptions) {
   let recordId: string | undefined, data: JarLorebooksResult | undefined, character: ImportedCharacter | undefined;
-  let busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
+  let hiddenCard = false, busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
   const imported = new Map<string, ImportedLorebook>();
   /** Public books already tried automatically for the imported character; a failure is not retried on its own. */
   const autoTried = new Set<string>();
@@ -114,9 +116,18 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
     if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
-    const showClosed = !!data && (data.closedTitles.length > 0 || data.captured);
+    heading.textContent = hiddenCard ? 'Hidden card and lorebooks' : 'Lorebooks';
+    const showClosed = !!data && (hiddenCard || data.closedTitles.length > 0 || data.captured);
     closed.hidden = !showClosed;
-    if (data && showClosed) {
+    closedTitle.textContent = hiddenCard ? 'Hidden character definition' : 'Closed lorebook';
+    if (data && showClosed && hiddenCard) {
+      const lore = data.closedTitles.length ? ` The same capture collects its closed lorebooks (${data.closedTitles.join(', ')}) for rebuilding.` : '';
+      closedText.textContent = !data.allowProxy
+        ? 'The creator hides this character’s definition and does not allow proxies, so JAR cannot recover it. Use a downloaded card file instead.'
+        : `The creator hides this character’s definition. JAR can recover it from a temporary chat.${lore} The recovered card is pieced together from the chat prompt, so review it before importing.`;
+      captureButton.hidden = !data.allowProxy; captureButton.textContent = 'Capture hidden card with JAR…';
+      rebuildButton.hidden = true;
+    } else if (data && showClosed) {
       const earlier = data.earlierRecordAt ? `Using the capture JAR saved with an earlier copy of this character (captured ${new Date(data.earlierRecordAt).toLocaleString()}). ` : '';
       const titles = `${data.closedTitles.length ? `JAR could not download: ${data.closedTitles.join(', ')}. ` : ''}${earlier}`;
       const rebuilt = data.books.some(book => book.kind === 'rebuilt');
@@ -130,7 +141,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     }
     captureButton.disabled = locked || !!confirming; rebuildButton.disabled = locked || !!confirming;
     confirm.hidden = !confirming;
-    if (confirming) { confirmMessage.textContent = confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
+    if (confirming) { confirmMessage.textContent = (hiddenCard && confirming === 'capture' ? 'JAR also recovers the hidden character definition from this chat. ' : '') + confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
     trigger.hidden = confirming !== 'capture';
     const choice = triggerChoice(), empty = !choice.customText && !loreTriggerSources.some(source => choice[source]);
     words.disabled = locked; for (const source of loreTriggerSources) sourceInputs[source].disabled = locked;
@@ -198,7 +209,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
 
   async function run(action: Action) {
     if (disposed || busy || outerBusy || !recordId || !data) return;
-    const token = ++generation, id = recordId, before = data;
+    const token = ++generation, id = recordId, before = data, forCard = hiddenCard && action === 'capture';
+    let recovered = false;
     const verb = action === 'capture' ? 'capturing the closed lorebook' : 'rebuilding the lorebook with its LLM';
     setBusy(true); message(`JAR is ${verb}…`);
     const finished = (next: JarLorebooksResult) => action === 'capture'
@@ -226,10 +238,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
         if (stopWaiting) { message('Stopped waiting. JAR may still finish; choose Check JAR for lorebooks later.', 'warning'); data = undefined; return; }
       }
       if (disposed || token !== generation) return;
+      if (forCard && finished(data)) { recovered = true; message('Captured. Loading the recovered card…', 'success'); return; }
       message(!finished(data) ? 'JAR did not report a new result. Check JAR’s console, then try again.'
         : action === 'capture' ? 'Captured. Rebuild it with JAR’s LLM to get entries with trigger keywords.' : 'Rebuilt. Review the entries, then import the lorebook.', finished(data) ? 'success' : 'warning');
     } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'JAR could not finish this step.', 'error'); }
-    finally { if (!disposed && token === generation) { waiting = false; setBusy(false); } }
+    finally { if (!disposed && token === generation) { waiting = false; setBusy(false); if (recovered) options.onHiddenCardCaptured?.(); } }
   }
 
   async function importBook(book: JarLorebook, attach: boolean) {
@@ -258,12 +271,12 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   return {
     root,
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
-    show(id: string) {
+    show(id: string, hidden = false) {
       if (disposed) return;
-      if (recordId !== id) { generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
-    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
+    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
     setCharacter(value?: ImportedCharacter) {
       character = value; render(); autoImport();
       if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });

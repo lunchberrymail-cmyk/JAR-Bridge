@@ -40,6 +40,8 @@ export interface JarLinkResult {
   card?: JarCardResult;
   history?: JarHistoryResult;
   warning?: string;
+  /** The creator hides the definition; a JAR capture can recover it. */
+  hiddenCard?: true;
 }
 export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
   | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'cancel';

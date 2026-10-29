@@ -121,3 +121,13 @@ test('a failed connection check links to the JAR setup steps', async () => {
   expect(document.querySelector<HTMLElement>('.jar-guide')!.hidden).toBe(false);
   expect(document.querySelector<HTMLElement>('#jar-guide-step-2')!.hidden).toBe(false);
 });
+
+test('Clear empties the link field and the preview', async () => {
+  preview(); await settle();
+  expect(document.querySelector<HTMLElement>('.jar-preview')!.hidden).toBe(false);
+  const clear = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Clear')!;
+  expect(clear.disabled).toBe(false); clear.click();
+  expect(document.querySelector<HTMLInputElement>('#jar-source-link')!.value).toBe('');
+  expect(document.querySelector<HTMLElement>('.jar-preview')!.hidden).toBe(true);
+  expect(clear.disabled).toBe(true);
+});

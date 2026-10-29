@@ -55,6 +55,7 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
       catch { return false; }
     }
     if (result.card !== undefined && !isCardResult(result.card, result.recordId)) return false;
+    if (result.hiddenCard !== undefined && (result.hiddenCard !== true || result.card !== undefined || link.kind !== 'character')) return false;
     if (link.kind === 'character') return result.history === undefined && (result.card !== undefined || typeof result.warning === 'string');
     const history = object(result.history);
     return !!history && history.recordId === result.recordId && history.chatId === link.chatId

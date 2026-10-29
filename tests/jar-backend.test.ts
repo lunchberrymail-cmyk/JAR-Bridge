@@ -479,9 +479,10 @@ describe('explicit pasted JanitorAI links', () => {
     const pending = { ...directRecord(), character: { name: 'Pending', definitionSource: 'pending' } };
     for (const sourceUrl of [characterLink, chatLink]) {
       const f = fixture({ cors: async url => url.includes('/api/captures/') ? response(pending) : directResponse(url) });
-      f.send({ id: 'pending-link', command: 'preview-link', sourceUrl }); await wait();
+      f.send({ id: 'pending-link', command: 'preview-link', sourceUrl }); await wait(); await wait();
       const result = f.replies[0].payload.result;
       expect(result.card).toBeUndefined(); expect(result.warning).toContain('card file');
+      expect(result.hiddenCard).toBe(sourceUrl === characterLink ? true : undefined);
       if (sourceUrl === chatLink) expect(result.history.chatId).toBe('31415');
       else expect(result.history).toBeUndefined();
     }
@@ -496,11 +497,24 @@ describe('explicit pasted JanitorAI links', () => {
     f.send({ id: 'other-address', command: 'preview-link', sourceUrl: characterLink, baseUrl: 'http://localhost:4580' }); await wait();
     expect(f.calls.at(-2)!.url).toBe('http://127.0.0.1:4580/api/inspect');
   });
-  test('does not reuse a pending record and never lists or scans unrelated archive records', async () => {
+  test('does not reuse a pending record; a hidden card offers capture and reads only same-named records', async () => {
     const pending = { ...directRecord(), character: { name: 'Pending', definitionSource: 'pending' } };
-    const f = fixture({ cors: async url => url.includes('/api/captures/') ? response(pending) : directResponse(url) });
-    for (const id of ['pending-one', 'pending-two']) { f.send({ id, command: 'preview-link', sourceUrl: characterLink }); await wait(); }
-    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/inspect', '/api/captures/123-abc']);
+    const list = [{ id: '123-abc', characterName: 'Stored name', ts: 3 }, { id: 'other-1', characterName: 'Someone else', ts: 2 }];
+    const f = fixture({ cors: async url => url.endsWith('/api/captures') ? response(list) : url.includes('/api/captures/') ? response(pending) : directResponse(url) });
+    for (const id of ['pending-one', 'pending-two']) { f.send({ id, command: 'preview-link', sourceUrl: characterLink }); await wait(); await wait(); }
+    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/captures', '/api/inspect', '/api/captures/123-abc', '/api/captures']);
+    expect(f.replies.map(reply => reply.payload.result.hiddenCard)).toEqual([true, true]);
+  });
+  test('a hidden card recovered by an earlier capture of the same link is previewed from that record', async () => {
+    const pending = { ...directRecord(), character: { name: 'Pending', definitionSource: 'pending' } };
+    const list = [{ id: '123-abc', characterName: 'Stored name', ts: 3 }, { id: 'old-1', characterName: 'Stored name', ts: 2 }, { id: 'old-2', characterName: 'Stored name', ts: 1 }, { id: 'other-1', characterName: 'Someone else', ts: 4 }];
+    const records: Record<string, unknown> = { 'old-1': { ...directRecord(), id: 'old-1', characterId: '99999999-1234-1234-1234-123456789abc' }, 'old-2': { ...directRecord(), id: 'old-2' } };
+    const f = fixture({ cors: async url => url.endsWith('/api/captures') ? response(list) : url.includes('/api/captures/old-') ? response(records[url.split('/').pop()!]) : url.includes('/api/captures/') ? response(pending) : directResponse(url) });
+    f.send({ id: 'recovered', command: 'preview-link', sourceUrl: characterLink }); for (let i = 0; i < 4; i++) await wait();
+    const result = f.replies[0].payload.result;
+    expect(result.recordId).toBe('old-2'); expect(result.card.card.data.description).toContain('Exact'); expect(result.hiddenCard).toBeUndefined();
+    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/captures', '/api/captures/old-1', '/api/captures/old-2']);
+    expect(JSON.stringify(f.replies)).not.toContain('PRIVATE');
   });
   test('rejects foreign hosts, malformed links and path tricks before any CORS call', async () => {
     const f = fixture();

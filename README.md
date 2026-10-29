@@ -61,10 +61,12 @@ If you view Lumiverse on a phone while JAR is already running on the server comp
 
 Opening **JAR Import** from the drawer opens the import assistant in a larger window. The drawer itself only offers to reopen it; **Use it in this drawer instead** keeps the full importer there.
 
-1. In **JanitorAI link**, paste a `https://janitorai.com/characters/…` or `/chats/…` link and choose **Preview link**.
+1. In **JanitorAI link**, paste a `https://janitorai.com/characters/…` or `/chats/…` link and choose **Preview link**. **Clear** empties the field and the preview.
 2. Review the character and choose **Import to Lumiverse** if you need it in your library.
 3. Choose **Next: import chat history**. For a conversation link, the loaded messages follow automatically. If the character is already here, **Use an existing character for this chat** skips another card import.
 4. Review the messages, choose the destination character, then choose **Import chat → Continue chat**.
+
+**Hidden definitions.** When a creator hides a character's definition, the preview has only its public details and shows **Hidden card and lorebooks** instead. **Capture hidden card with JAR…** runs the same capture as closed lorebooks, with the same confirmation, **Your words** box and throwaway-account advice: JAR opens a temporary chat, recovers the definition from the prompt, and collects any closed lorebooks for rebuilding. The preview then reloads with the recovered card. It is pieced together from the chat prompt, so review it before importing. It is unavailable when the creator does not allow proxies. A later preview of the same link reuses a definition JAR already recovered.
 
 For history only, open **Chat history → From JAR**, paste the conversation URL into **JanitorAI conversation link**, and choose **Load chat**. Choose a Lumiverse character before importing. You do not need to connect a saved-card catalog first.
 
@@ -104,7 +106,7 @@ These sites are not presented as a way to retrieve your private chat history. Fo
 - **JAR's browser is busy:** let its current operation finish before retrying.
 - **A chat works in JAR but not here:** download it from JAR as JSON or SillyTavern JSONL, then choose **Chat history → History file**. Lumiverse limits each proxied request to 30 seconds.
 - **A lorebook step fails:** keep JAR signed in and idle, and check its extraction LLM settings before rebuilding. If the creator does not allow proxies, only public lorebooks are available.
-- **The card is incomplete:** a saved/link record can contain only a name. Use a completed exported card or choose an existing character for the conversation. Hidden-card recovery stays a separate, explicit action in JAR and may send probes/create chats.
+- **The card is incomplete:** the creator hides the definition, so the link preview has only public details. Use **Capture hidden card with JAR…** (see below), a completed exported card, or an existing character for the conversation.
 - **The save result is interrupted:** check the destination character's chats or your library before explicitly retrying. A native save can finish even if its response was lost.
 
 ## What is saved
