@@ -1,5 +1,5 @@
 import type { createJarClient } from './client';
-import type { JarDeleteResult, JarSummary } from './jar-adapter';
+import type { JarDeleteResult, JarRecordDetail, JarRecordDetails, JarSummary } from './jar-adapter';
 
 type Client = ReturnType<typeof createJarClient>;
 export interface CleanupOptions {
@@ -24,18 +24,30 @@ export function recordKind(item: JarSummary): string {
   return item.source ? `Saved (${item.source})` : 'Saved';
 }
 
+/** Records worth reading to find duplicates: those sharing a name with another record. */
+export function duplicateCandidates(items: JarSummary[]): string[] {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.name, (counts.get(item.name) || 0) + 1);
+  return items.filter(item => (counts.get(item.name) || 0) > 1).map(item => item.id);
+}
+
 /**
- * Link previews JAR made again for a character it already has. A character's
- * captures are always kept; without one, its newest preview is kept.
+ * Empty link previews JAR made again for a JanitorAI character it already has,
+ * matched by character ID, never by name. A record with a capture or linked
+ * conversations is never selected; without one, the newest empty preview is kept.
  */
-export function duplicatePreviews(items: JarSummary[]): string[] {
+export function duplicatePreviews(items: JarSummary[], details: JarRecordDetail[]): string[] {
+  const known = new Map(details.map(detail => [detail.id, detail]));
   const groups = new Map<string, JarSummary[]>();
-  for (const item of items) groups.set(item.name, [...groups.get(item.name) || [], item]);
+  for (const item of items) {
+    const characterId = known.get(item.id)?.characterId;
+    if (characterId) groups.set(characterId, [...groups.get(characterId) || [], item]);
+  }
   const duplicates: string[] = [];
   for (const group of groups.values()) {
-    const previews = group.filter(item => item.source === 'inspect').sort((a, b) => b.ts - a.ts);
-    const keepNewest = previews.length === group.length;
-    duplicates.push(...previews.slice(keepNewest ? 1 : 0).map(item => item.id));
+    const isEmpty = (item: JarSummary) => { const detail = known.get(item.id)!; return item.source === 'inspect' && !detail.captured && !detail.conversations; };
+    const empty = group.filter(isEmpty).sort((a, b) => b.ts - a.ts);
+    duplicates.push(...empty.slice(empty.length === group.length ? 1 : 0).map(item => item.id));
   }
   return duplicates;
 }
@@ -49,7 +61,7 @@ export function createCleanup(options: CleanupOptions) {
   const heading = el('h3', '', 'Clean up JAR');
   const intro = el('p', 'jar-help', 'Delete records saved in JAR. This only removes them from JAR: characters, chats and lorebooks you imported into Lumiverse stay exactly as they are.');
   const shortcuts = el('div', 'jar-actions jar-cleanup-shortcuts');
-  const pickDuplicates = button('Select duplicate previews', () => { chosen.clear(); for (const id of duplicatePreviews(items)) chosen.add(id); render(); }, 'jar-link');
+  const pickDuplicates = button('Select duplicate previews', () => { void findDuplicates(); }, 'jar-link');
   const pickAll = button('Select all', () => { for (const item of items) chosen.add(item.id); render(); }, 'jar-link');
   const pickNone = button('Select none', () => { chosen.clear(); render(); }, 'jar-link');
   shortcuts.append(pickDuplicates, pickAll, pickNone);
@@ -96,6 +108,20 @@ export function createCleanup(options: CleanupOptions) {
     }
     confirmYes.disabled = locked; confirmNo.disabled = locked;
     root.setAttribute('aria-busy', String(busy));
+  }
+
+  async function findDuplicates() {
+    if (disposed || busy || outerBusy) return;
+    const candidates = duplicateCandidates(items).slice(0, 200);
+    if (!candidates.length) { chosen.clear(); render(); message('No duplicate previews found.'); return; }
+    busy = true; options.onBusy(true); render(); message('Checking which records are copies of the same character…');
+    try {
+      const reply = await options.client.request('record-details', options.getBaseUrl(), undefined, undefined, undefined, { recordIds: candidates }) as JarRecordDetails;
+      if (disposed) return;
+      chosen.clear(); for (const id of duplicatePreviews(items, reply.records)) chosen.add(id);
+      message(chosen.size ? `Selected ${chosen.size} empty duplicate preview${chosen.size === 1 ? '' : 's'}. Captures and records linked to conversations are never selected.` : 'No duplicate previews found.');
+    } catch (error) { if (!disposed && !isAbort(error)) message(error instanceof Error ? error.message : 'JAR could not check these records.', 'error'); }
+    finally { if (!disposed) { busy = false; options.onBusy(false); render(); } }
   }
 
   async function run() {

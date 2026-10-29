@@ -501,6 +501,14 @@ describe('explicit pasted JanitorAI links', () => {
     expect(restarted.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/captures/123-abc']);
     expect(restarted.replies[0].payload.result.card).toBeDefined();
   });
+  test('a remembered record survives JAR being briefly unreachable', async () => {
+    const key = `http://127.0.0.1:4577${String.fromCharCode(0)}${characterLink}`;
+    const files = new Map([['jar-links.json', JSON.stringify({ schemaVersion: 1, links: { [key]: 'kept-1' } })]]);
+    const f = fixture({ files, cors: async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:4577'); } });
+    f.send({ id: 'down', command: 'preview-link', sourceUrl: characterLink }); for (let i = 0; i < 3; i++) await wait();
+    expect(f.replies[0].payload.error).toBeDefined();
+    expect(JSON.parse(files.get('jar-links.json')!).links).toEqual({ [key]: 'kept-1' });
+  });
   test('a remembered record deleted in JAR is forgotten and the link inspected again', async () => {
     const files = new Map([['jar-links.json', JSON.stringify({ schemaVersion: 1, links: { [`http://127.0.0.1:4577${String.fromCharCode(0)}${characterLink}`]: 'gone-1' } })]]);
     const f = fixture({ files, cors: async url => url.endsWith('/gone-1') ? response({ error: 'not found' }, 404) : directResponse(url) });

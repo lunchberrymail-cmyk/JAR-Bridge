@@ -3,7 +3,7 @@ import { JSDOM } from 'jsdom';
 import { setupJarBackend } from '../src/backend';
 import { createJarTransport } from '../src/transport';
 import { createJarClient } from '../src/client';
-import { createCleanup, duplicatePreviews } from '../src/cleanup-ui';
+import { createCleanup, duplicateCandidates, duplicatePreviews } from '../src/cleanup-ui';
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -30,12 +30,26 @@ function fixture(cors: (url: string, request: any) => Promise<unknown>) {
 }
 
 describe('JAR cleanup', () => {
-  test('duplicate previews keep every capture, and the newest preview when a character has no capture', () => {
-    expect(duplicatePreviews([
+  test('duplicates are matched by JanitorAI character, never by name, and keep captures and conversation links', () => {
+    const items = [
       row('n1', 'NOVA', 'inspect', 1), row('n2', 'NOVA', 'generateAlpha', 2), row('n3', 'NOVA', 'inspect', 3),
       row('k1', 'Kai', 'inspect', 1), row('k2', 'Kai', 'inspect', 5), row('k3', 'Kai', 'inspect', 3),
-      row('y1', 'Yuki', 'inspect', 1), row('w1', 'Weston', 'generateAlpha', 1),
-    ]).sort()).toEqual(['k1', 'k3', 'n1', 'n3']);
+      row('l1', 'Luna', 'generateAlpha', 1), row('l2', 'Luna', 'inspect', 2),
+      row('c1', 'Chat', 'inspect', 1), row('c2', 'Chat', 'inspect', 2),
+      row('y1', 'Yuki', 'inspect', 1),
+    ];
+    expect(duplicateCandidates(items).sort()).toEqual(['c1', 'c2', 'k1', 'k2', 'k3', 'l1', 'l2', 'n1', 'n2', 'n3']);
+    const detail = (id: string, characterId: string, extra: any = {}) => ({ id, characterId, conversations: 0, captured: false, ...extra });
+    const details = [
+      detail('n1', 'nova'), detail('n2', 'nova', { captured: true }), detail('n3', 'nova'),
+      detail('k1', 'kai'), detail('k2', 'kai'), detail('k3', 'kai'),
+      // Two different characters that share a name.
+      detail('l1', 'luna-one', { captured: true }), detail('l2', 'luna-two'),
+      // The older preview holds JAR's link to a JanitorAI conversation.
+      detail('c1', 'chat', { conversations: 1 }), detail('c2', 'chat'),
+    ];
+    expect(duplicatePreviews(items, details).sort()).toEqual(['c2', 'k1', 'k3', 'n1', 'n3']);
+    expect(duplicatePreviews(items, [])).toEqual([]);
   });
 
   test('a delete uses JAR’s DELETE route for one validated record only', async () => {
@@ -54,6 +68,17 @@ describe('JAR cleanup', () => {
     expect(f.touched).toEqual([]);
   });
 
+  test('record details expose only the character ID, conversation count and whether it holds a capture', async () => {
+    const records: any = { 'a-1': { id: 'a-1', characterId: '88f9526f-f0da-46c3-b221-e75ece0925de', conversations: [{ chatId: '1' }], payload: { systemPrompt: 'PRIVATE' } }, 'b-2': { id: 'b-2', characterId: '' } };
+    const f = fixture(async url => url.endsWith('/gone-3') ? response({ error: 'not found' }, 404) : response(records[url.split('/').pop()!]));
+    f.send({ id: 'r1', command: 'record-details', recordIds: ['a-1', 'b-2', 'gone-3'] }); for (let i = 0; i < 4; i++) await wait();
+    expect(f.replies[0].result).toEqual({ records: [
+      { id: 'a-1', characterId: '88f9526f-f0da-46c3-b221-e75ece0925de', conversations: 1, captured: true },
+      { id: 'b-2', characterId: '', conversations: 0, captured: false },
+    ] });
+    expect(JSON.stringify(f.replies)).not.toContain('PRIVATE'); expect(f.touched).toEqual([]);
+  });
+
   test('the backend refuses bad or repeated record lists before calling JAR', async () => {
     const f = fixture(async () => response({ ok: true }));
     for (const recordIds of [undefined, [], ['../x'], ['a-1', 'a-1'], 'a-1']) { f.send({ id: 'bad', command: 'delete-records', recordIds }); await wait(); }
@@ -65,7 +90,9 @@ describe('JAR cleanup', () => {
     const requests: any[] = []; let receive: (payload: unknown) => void = () => {};
     const ctx: any = {
       onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
-      sendToBackend: (request: any) => { requests.push(request); if (request.command === 'cancel') return; setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result: { deleted: request.recordIds, failed: [] } }), 0); },
+      sendToBackend: (request: any) => { requests.push(request); if (request.command === 'cancel') return;
+        const result = request.command === 'record-details' ? { records: request.recordIds.map((id: string) => ({ id, characterId: 'nova', conversations: 0, captured: id === 'n2' })) } : { deleted: request.recordIds, failed: [] };
+        setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result }), 0); },
     };
     const client = createJarClient(ctx); const deletedLists: string[][] = [];
     const ui = createCleanup({ client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, onDeleted: ids => deletedLists.push(ids) });
@@ -73,10 +100,10 @@ describe('JAR cleanup', () => {
     const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text)!;
     ui.show([row('n1', 'NOVA', 'inspect', 1), row('n2', 'NOVA', 'generateAlpha', 2), row('n3', 'NOVA', 'inspect', 3)]);
     expect(ui.root.textContent).toContain('stay exactly as they are');
-    button('Select duplicate previews').click();
+    button('Select duplicate previews').click(); for (let i = 0; i < 3; i++) await settle();
     expect([...ui.root.querySelectorAll<HTMLInputElement>('.jar-cleanup-row input')].map(input => input.checked)).toEqual([true, false, true]);
     button('Delete 2 from JAR…').click(); await settle();
-    expect(requests).toHaveLength(0);
+    expect(requests.map(r => r.command)).toEqual(['record-details']);
     expect(ui.root.textContent).toContain('Nothing in Lumiverse is changed');
     expect(ui.root.textContent).not.toContain('are captures');
     button('Select all').click(); button('Delete 3 from JAR…').click();

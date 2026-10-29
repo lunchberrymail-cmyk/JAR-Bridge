@@ -341,6 +341,20 @@ describe('lorebook panel', () => {
     expect(first().open).toBe(true); expect(first().querySelectorAll('.jar-lorebook-entry')).toHaveLength(2);
   });
 
+  test('a character imported for one record is never the attach target for the next one', async () => {
+    const posted: string[] = [];
+    globalThis.fetch = (async (url: string, init: any) => { if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] }); posted.push(JSON.parse(init.body).name); return Response.json({ world_book: { id: 'book-1', name: 'x' }, entry_count: 1 }, { status: 201 }); }) as any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ id: request.recordId, privateLorebookReconstruction: undefined })) }
+      : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined);
+    p.ui.show('123-abc'); await settle();
+    p.ui.setCharacter({ id: 'char-a', name: 'Alice' }); for (let i = 0; i < 5; i++) await settle();
+    expect(posted).toEqual(['MENAGERIE']);
+    p.ui.hide(); p.ui.show('456-def', true); for (let i = 0; i < 5; i++) await settle();
+    expect(posted).toEqual(['MENAGERIE']);
+    expect(p.requests.filter(r => r.command === 'attach-lorebook').map(r => r.characterId)).toEqual(['char-a']);
+    expect(p.ui.root.textContent).not.toContain('Alice');
+  });
+
   test('a public book can still be imported on its own before the card', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;

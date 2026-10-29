@@ -1,5 +1,5 @@
 import type { SpindleAPI } from 'lumiverse-spindle-types';
-import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarDeleteResult, type JarLinkResult, type JarResponse } from './jar-adapter';
+import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarDeleteResult, type JarLinkResult, type JarRecordDetails, type JarResponse } from './jar-adapter';
 import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRoute } from './transport';
 import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
@@ -11,7 +11,7 @@ type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout
 const requestChannel = 'jar_bridge:request';
 const responseChannel = 'jar_bridge:response';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records']);
+const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details']);
 /** Lumiverse entity IDs are opaque; accept only short route-safe tokens. */
 function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -122,12 +122,13 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             const cachedId = await linkIndex.get(cacheKey);
             if (cachedId) {
               // A record deleted in JAR, or one now holding another character, is forgotten.
-              let candidate: Record<string, unknown> = {};
+              // A failed read keeps the entry: inspecting again replaces it if the record is gone.
+              let candidate: Record<string, unknown> | undefined;
               try { candidate = object(await ownedGet({ kind: 'card', recordId: cachedId })); }
               catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; }
               if (!current()) return;
-              if (candidate.id === cachedId && characterUrl(candidate) === link.sourceUrl) { record = candidate; card = availableCard(candidate); }
-              else await linkIndex.delete(cacheKey);
+              if (candidate?.id === cachedId && characterUrl(candidate) === link.sourceUrl) { record = candidate; card = availableCard(candidate); }
+              else if (candidate) await linkIndex.delete(cacheKey);
             }
             if (!record) {
               const inspected = object(await ownedGet({ kind: 'inspect', sourceUrl: link.sourceUrl }));
@@ -224,6 +225,20 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (!current()) return;
             result = { state, lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;
           }
+        } else if (command === 'record-details') {
+          const ids = request.recordIds;
+          if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !ids.every(isRecordId) || new Set(ids).size !== ids.length) throw new Error('Choose the JAR records to check again.');
+          const records: JarRecordDetails['records'] = [];
+          for (const id of ids) {
+            if (!current()) return;
+            let record: Record<string, unknown>;
+            try { record = object(await ownedGet({ kind: 'card', recordId: id })); }
+            catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; continue; }
+            if (record.id !== id) continue;
+            records.push({ id, characterId: characterIdOf(record), conversations: Array.isArray(record.conversations) ? record.conversations.length : 0,
+              captured: !!record.payload || typeof record.capturedAt === 'number' || !!record.privateLorebookReconstruction });
+          }
+          result = { records } satisfies JarRecordDetails;
         } else if (command === 'delete-records') {
           // Removes records from JAR only. Nothing in Lumiverse refers to JAR records,
           // so imported characters, chats and lorebooks are unaffected.

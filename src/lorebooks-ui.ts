@@ -206,7 +206,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       const name = attachedTo.get(bookKey(book));
       return name ? ['done', `Attached to ${name}`] : imported.has(bookKey(book)) ? ['done', 'In World Info'] : undefined;
     };
-    const rows: [string, string, string][] = publicBooks.map(book => [book.title, ...(done(book) || ['open', 'Open · imports with the card'])] as [string, string, string]);
+    const rows: [string, string, string][] = publicBooks.map(book => [book.title, ...(done(book) || (autoTried.has(bookKey(book)) ? ['partial', 'Open · not imported, use Import lorebook'] : ['open', 'Open · imports with the card']))] as [string, string, string]);
     const rebuilt = data.books.find(book => book.kind === 'rebuilt');
     const rebuiltDone = rebuilt && done(rebuilt);
     const [tone, state] = rebuiltDone ? [rebuiltDone[0], `Rebuilt · ${rebuiltDone[1]}`]
@@ -225,7 +225,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   function renderNotice(locked: boolean) {
     const rebuilt = !!data?.books.some(book => book.kind === 'rebuilt');
     notice.hidden = !data || hiddenCard || !(data.captured || rebuilt);
-    if (!data || notice.hidden) { noticeRebuild.hidden = true; return; }
+    if (!data || notice.hidden) { noticeRebuild.hidden = true; noticeList.replaceChildren(); return; }
     const waitingRebuild = data.captured && !rebuilt;
     noticeTitle.textContent = waitingRebuild ? 'Captured, not rebuilt yet' : 'Check the rebuilt lorebook';
     const points = [
@@ -352,14 +352,14 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (reply.state === 'running' && !finished(data)) {
         // JAR keeps working after Lumiverse's proxy gives up; read the record until it lands.
         waiting = true; stopWaiting = false; render();
-        const started = Date.now();
+        const started = Date.now(); let misses = 0;
         while (!disposed && token === generation && !stopWaiting) {
           if (Date.now() - started > WAIT_LIMIT_MS) { message('JAR has not finished after 10 minutes. Check JAR’s console, then choose Check JAR for lorebooks.', 'warning'); data = undefined; return; }
           waitText.textContent = `JAR is still ${verb}… ${Math.round((Date.now() - started) / 1000)} s`;
           await sleep(options.pollMs ?? POLL_MS);
           if (disposed || token !== generation || stopWaiting) break;
-          try { data = await options.client.request('lorebooks', options.getBaseUrl(), id) as JarLorebooksResult; }
-          catch (error) { if (isAbort(error) && stopWaiting) break; throw error; }
+          try { data = await options.client.request('lorebooks', options.getBaseUrl(), id) as JarLorebooksResult; misses = 0; }
+          catch (error) { if (isAbort(error)) { if (stopWaiting) break; throw error; } if (++misses >= 3) throw error; continue; }
           if (disposed || token !== generation) return;
           if (finished(data)) break;
         }
@@ -404,10 +404,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
-      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; character = undefined; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
-    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
+    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; character = undefined; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
     setCharacter(value?: ImportedCharacter) {
       character = value; render(); autoImport();
       if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });

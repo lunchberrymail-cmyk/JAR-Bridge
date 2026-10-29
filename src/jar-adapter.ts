@@ -33,6 +33,9 @@ export interface JarCardResult {
   warnings?: string[];
 }
 export interface JarDeleteResult { deleted: string[]; failed: string[] }
+/** What cleanup needs to tell copies of one character apart; never the captured content. */
+export interface JarRecordDetail { id: string; characterId: string; conversations: number; captured: boolean }
+export interface JarRecordDetails { records: JarRecordDetail[] }
 export interface JarLinkResult {
   kind: 'character' | 'chat';
   sourceUrl: string;
@@ -45,7 +48,7 @@ export interface JarLinkResult {
   hiddenCard?: true;
 }
 export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
-  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'cancel';
+  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'record-details' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
@@ -58,7 +61,7 @@ export interface JarRequest {
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;
   result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult
-    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] } | JarDeleteResult;
+    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] } | JarDeleteResult | JarRecordDetails;
   error?: string;
 }
 

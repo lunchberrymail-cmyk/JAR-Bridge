@@ -116,7 +116,8 @@ export function setup(ctx: SpindleFrontendContext) {
   const cleanup = createCleanup({ client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); },
     onDeleted: ids => {
       captures = captures.filter(item => !ids.includes(item.id));
-      if (selected && ids.includes(selected.recordId)) resetSelection();
+      if ((selected && ids.includes(selected.recordId)) || (hiddenRecordId && ids.includes(hiddenRecordId))) resetSelection();
+      else if (selected || hiddenRecordId) { lorebooks.hide(); syncLorebooks(); }
       renderList(); updateControls();
     } });
   results.append(cleanup.root);
@@ -175,7 +176,13 @@ export function setup(ctx: SpindleFrontendContext) {
     // directly: previewing the link again would make JAR add another record.
     importCard: () => { if (disposed || busy || mode !== 'archive' || !selected || imported || uncertain) return false; void runImport(); return true; },
     canImportCard: () => mode === 'archive' && !!selected && !imported && !uncertain,
-    onHiddenCardCaptured: id => { if (!disposed && mode === 'archive' && hiddenRecordId) void select({ id, name: 'Recovered card', source: 'JanitorAI link', ts: Date.now() }); } });
+    onHiddenCardCaptured: id => {
+      const hidden = hiddenRecordId;
+      if (disposed || mode !== 'archive' || !hidden) return;
+      void select({ id, name: 'Recovered card', source: 'JanitorAI link', ts: Date.now() }).then(() => {
+        if (!disposed && mode === 'archive' && !selected && !hiddenRecordId) { hiddenRecordId = hidden; syncLorebooks(); updateControls(); }
+      });
+    } });
   previewTop.append(lorebooks.banner);
   historyPanel.append(chatHistory.root);
   root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions, lorebooks.root); tab.root.append(root);

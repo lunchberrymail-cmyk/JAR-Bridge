@@ -65,6 +65,10 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
   if (pending.command === 'lorebooks') return isLorebooks(result, pending.recordId);
   if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
   if (pending.command === 'attach-lorebook') return result.characterId === pending.extras?.characterId && Array.isArray(result.worldBookIds) && result.worldBookIds.includes(pending.extras?.worldBookId);
+  if (pending.command === 'record-details') {
+    const asked = new Set(pending.extras?.recordIds || []);
+    return Array.isArray(result.records) && result.records.every(item => { const row = object(item); return !!row && typeof row.id === 'string' && asked.has(row.id) && typeof row.characterId === 'string' && typeof row.conversations === 'number' && typeof row.captured === 'boolean'; });
+  }
   if (pending.command === 'delete-records') {
     const asked = new Set(pending.extras?.recordIds || []);
     const ids = (value: unknown) => Array.isArray(value) && value.every(id => typeof id === 'string' && asked.has(id));
