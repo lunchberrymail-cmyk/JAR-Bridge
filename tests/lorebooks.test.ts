@@ -167,7 +167,7 @@ describe('JAR lorebook backend commands', () => {
 describe('lorebook panel', () => {
   const original = { document: globalThis.document, fetch: globalThis.fetch };
   afterEach(() => { globalThis.document = original.document; globalThis.fetch = original.fetch; });
-  function panel(reply: (request: any) => any, grants = ['cors_proxy', 'characters', 'world_books'], onHiddenCardCaptured?: () => void) {
+  function panel(reply: (request: any) => any, grants = ['cors_proxy', 'characters', 'world_books'], onHiddenCardCaptured?: (id: string) => void, extra: Record<string, unknown> = {}) {
     const dom = new JSDOM('<body></body>', { url: 'http://localhost:7860' }); globalThis.document = dom.window.document;
     const requests: any[] = []; let receive: (payload: unknown) => void = () => {};
     const ctx: any = {
@@ -176,7 +176,7 @@ describe('lorebook panel', () => {
       sendToBackend: (request: any) => { requests.push(request); if (request.command === 'cancel') return; const result = reply(request); if (result !== undefined) setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, ...result }), 0); },
     };
     const client = createJarClient(ctx);
-    const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, pollMs: 1, onHiddenCardCaptured });
+    const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, pollMs: 1, onHiddenCardCaptured, ...extra });
     document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text);
     return { ui, requests, button };
@@ -306,6 +306,25 @@ describe('lorebook panel', () => {
     expect(p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].textContent).toBe('Import lorebook');
     p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); await settle();
     expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-picker')!.hidden).toBe(true);
+  });
+
+  test('Import card and attach imports the card, then the public books and the rebuilt one, attached', async () => {
+    const posted: any[] = []; let cardImports = 0;
+    globalThis.fetch = (async (url: string, init: any) => {
+      if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] });
+      const body = JSON.parse(init.body); posted.push(body.name); return Response.json({ world_book: { id: `book-${posted.length}`, name: body.name }, entry_count: body.entries.length }, { status: 201 });
+    }) as any;
+    let ui: any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) }
+      : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined,
+      undefined, undefined, { canImportCard: () => cardImports === 0, importCard: () => { cardImports++; setTimeout(() => ui.setCharacter({ id: 'char-3', name: 'Kai' }), 0); return true; } });
+    ui = p.ui; p.ui.show('123-abc'); for (let i = 0; i < 3; i++) await settle();
+    expect(posted).toHaveLength(0);
+    p.button('Import card and attach')!.click(); for (let i = 0; i < 10; i++) await settle();
+    expect(cardImports).toBe(1);
+    expect(posted).toEqual(['MENAGERIE', '2028 | ECLIPSE (rebuilt)']);
+    expect(p.requests.filter(r => r.command === 'attach-lorebook').map(r => r.characterId)).toEqual(['char-3', 'char-3']);
+    expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-callout')!.hidden).toBe(true);
   });
 
   test('a public book can still be imported on its own before the card', async () => {

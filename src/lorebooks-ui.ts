@@ -18,6 +18,9 @@ export interface LorebookOptions {
   pollMs?: number;
   /** A capture for a hidden-definition character finished; the card can be read again. */
   onHiddenCardCaptured?: (recordId: string) => void;
+  /** Import the previewed card when it can be; the importer then calls setCharacter. */
+  importCard?: () => boolean;
+  canImportCard?: () => boolean;
 }
 
 const POLL_MS = 5000;
@@ -42,6 +45,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   /** A character already in the library, chosen to attach books to when the card was not imported here. */
   let existing: ImportedCharacter | undefined, matches: ImportedCharacter[] = [], lookup = 0;
   const attachTarget = () => character || existing;
+  /** The rebuilt book waits for the card the user chose to import with it. */
+  let rebuiltAfterCard = false;
   let hiddenCard = false, busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
   const imported = new Map<string, ImportedLorebook>();
   /** Public books already tried automatically for the imported character; a failure is not retried on its own. */
@@ -56,7 +61,9 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const callout = el('div', 'jar-lorebook-callout'); callout.hidden = true; callout.setAttribute('role', 'group'); callout.setAttribute('aria-label', 'Rebuilt lorebook');
   const calloutText = el('p', '');
   const calloutButton = button('', () => { const book = pendingRebuilt(); if (book) void importBook(book, !!attachTarget()); }, 'jar-button jar-primary');
-  callout.append(calloutText, calloutButton);
+  const calloutWithCard = button('Import card and attach', () => { if (pendingRebuilt() && options.importCard?.()) { rebuiltAfterCard = true; render(); } }, 'jar-button');
+  const calloutRow = el('div', 'jar-actions'); calloutRow.append(calloutButton, calloutWithCard);
+  callout.append(calloutText, calloutRow);
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
@@ -134,6 +141,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       calloutButton.textContent = target ? `Import and attach to ${target.name}` : 'Import rebuilt lorebook';
     }
     calloutButton.disabled = locked;
+    calloutWithCard.hidden = !!attachTarget() || !options.canImportCard?.(); calloutWithCard.disabled = locked;
     picker.hidden = !!character || !data || !data.books.length;
     pickerSelect.replaceChildren(option('Do not attach (World Info only)', ''), ...matches.map(item => option(item.name, item.id)));
     pickerSelect.value = existing?.id || '';
@@ -244,7 +252,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   /** Public books need no capture, so they follow the imported character card in one go. */
   function autoImport() {
     if (disposed || busy || outerBusy || loading || !character || !data) return;
-    const next = data.books.find(book => book.kind === 'public' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
+    let next = data.books.find(book => book.kind === 'public' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
+    if (!next && rebuiltAfterCard) { rebuiltAfterCard = false; next = pendingRebuilt(); }
     if (!next) return;
     autoTried.add(bookKey(next));
     void importBook(next, true).then(autoImport);
@@ -335,7 +344,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
-      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); existing = undefined; matches = []; lookup++; pickerSearch.value = ''; resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },

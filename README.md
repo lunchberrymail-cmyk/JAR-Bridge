@@ -87,7 +87,7 @@ After you preview a JanitorAI character link, a **Lorebooks** section lists what
 
   Once JAR has captured anything, a note above the list explains the limits: capture only records entries whose keywords appeared, keywords are guessed by the LLM, and JAR combines several closed lorebooks into one rebuilt book. Until you rebuild, it is shown as a warning, with its own **Rebuild with JAR's LLM…** button, because nothing from the closed lorebook can be imported yet.
 
-  A rebuilt lorebook is not attached automatically. It appears in a highlighted box at the top of the Lorebooks section, and after you import the card, **Import and attach to <character>** adds it in one click.
+  A rebuilt lorebook is not attached automatically. It appears in a highlighted box at the top of the Lorebooks section, and after you import the card, **Import and attach to <character>** adds it in one click. Before the card is imported, **Import card and attach** does both: it imports the previewed card, then its public lorebooks and the rebuilt one, all attached to it.
 
   Imported the character earlier? **Already have this character in Lumiverse? Attach lorebooks to it** looks up your library by the character's name and preselects an exact match; **Find** searches for another one. Books you import then attach to that character. Choosing a character never imports anything by itself.
 
