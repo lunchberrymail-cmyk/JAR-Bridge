@@ -38,6 +38,10 @@ Open **JAR Import** in Lumiverse's sidebar, or use Janiverse's import banner. Th
 4. In JAR, choose **log in**. Sign into JanitorAI in the separate browser it opens. Being signed into JanitorAI in your usual browser is not enough.
 5. Return to Lumiverse. You can paste links and finish the transfer here; you do not need to prepare or link them in JAR's window first.
 
+The first time you open the importer, its **Help and import guide** walkthrough opens and takes you through these steps. If a connection check fails, **JAR won't connect? → First time with JAR? Set it up step by step** jumps back to them.
+
+**Use a throwaway account once your chats are over.** Your own JanitorAI account is only needed to read your own chat histories. When they are in Lumiverse, sign JAR into a throwaway account instead, especially before capturing closed lorebooks, which sends messages from whichever account JAR is signed into.
+
 Use **Check JAR connection** in the importer to verify that JAR is running. This checks its version only; it does not open JAR's browser, require a JanitorAI login, or read saved cards. **Load saved cards** is a separate action. An empty archive in a fresh download is a successful connection.
 
 Keep JAR's console open. Closing it stops the server even if its browser tab remains open. A newly extracted JAR folder has its own login session and saved-card folder; sign in using that copy's **Log in** button before loading JanitorAI links.
@@ -54,6 +58,8 @@ If JAR reports a missing Chromium executable, stop JAR, run `npx.cmd playwright 
 If you view Lumiverse on a phone while JAR is already running on the server computer, you can still paste links in this importer. A browser link to `127.0.0.1` opens the device you are currently viewing, so open JAR's own interface on the host computer.
 
 ## Import a card and chat
+
+Opening **JAR Import** from the drawer opens the import assistant in a larger window. The drawer itself only offers to reopen it; **Use it in this drawer instead** keeps the full importer there.
 
 1. In **JanitorAI link**, paste a `https://janitorai.com/characters/…` or `/chats/…` link and choose **Preview link**.
 2. Review the character and choose **Import to Lumiverse** if you need it in your library.
@@ -72,8 +78,10 @@ After you preview a JanitorAI character link, a **Lorebooks** section lists what
 
 - **Public lorebooks** that JAR downloaded are imported and attached automatically when you import the character card. You can also import one on its own with **Import lorebook** before importing the card.
 - **Closed lorebooks** need two explicit steps, each with a confirmation:
-  1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR; JAR recommends a throwaway account. It is unavailable when the creator does not allow proxies. Entries only appear when one of their keywords is in the trigger message, so the confirmation has a **Your words** box for names, places or other likely keywords, and an **Also include** list of what else JAR puts in that message (card, site description, scenario, first messages, lorebook names, JAR's saved default trigger text; all on by default, like JAR's own capture panel).
+  1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR, so use a throwaway account (see above). It is unavailable when the creator does not allow proxies. Entries only appear when one of their keywords is in the trigger message, so the confirmation has a **Your words** box for names, places or other likely keywords, and an **Also include** list of what else JAR puts in that message (card, site description, scenario, first messages, lorebook names, JAR's saved default trigger text; all on by default, like JAR's own capture panel).
   2. **Rebuild with JAR's LLM**: JAR sends the captured text and the card to the extraction LLM set in JAR's **⚙ Settings**, which rebuilds entries with trigger keywords. This uses that service's quota or credit.
+
+  A rebuilt lorebook is not attached automatically. It appears in a highlighted box at the top of the Lorebooks section, and after you import the card, **Import and attach to <character>** adds it in one click.
 
 A closed lorebook is one its creator chose not to share, and automated capture may break JanitorAI's terms. Capture only records entries that the probe actually triggered, so a large closed lorebook can come back incomplete. Rebuilt keywords are inferred by the LLM: review them, and edit very general ones in Lumiverse's World Info after import.
 
@@ -82,6 +90,8 @@ Capture and rebuild can take longer than Lumiverse's 30-second connection limit.
 ## Phone or tablet without JAR
 
 Use **Help and import guide → Phone or tablet · card file**. The guide links to [JannyAI](https://jannyai.com/) and [DataCat](https://datacat.run/) as character-card download alternatives, depending on availability and the creator's settings. Download an actual card, then return to **Import card file**.
+
+For lorebooks, including closed ones, the guide also links to [Sucker](https://sucker.severian.dev/). It works as a proxy in JanitorAI's API settings: chat with the character, and it extracts the card and the lorebook entries your messages trigger. Follow the instructions on its page; it only works when the creator allows proxies. Import a lorebook file from Lumiverse's World Info panel and attach it to the character there.
 
 These sites are not presented as a way to retrieve your private chat history. For a conversation, use a JAR JSON or compatible SillyTavern JSONL export you already have, or use JAR on a computer.
 
@@ -99,7 +109,7 @@ These sites are not presented as a way to retrieve your private chat history. Fo
 
 ## What is saved
 
-Cards use Lumiverse's normal importer and retain supported definition fields, greetings, instructions, tags, card extensions and embedded character lorebooks. PNG imports preserve portraits. Public creator names and JanitorAI creator IDs supplied by JAR are retained as card attribution, including the creator's public profile link when available. Some JAR cards also carry a public SoundCloud track ID, retained as display metadata for compatible interfaces such as Janiverse.
+Cards use Lumiverse's normal importer and retain supported definition fields, greetings (alternate greetings that repeat the first message with JanitorAI's "created by … on janitorai.com" line, and one-character leftovers such as `.`, are dropped), instructions, tags, card extensions and embedded character lorebooks. PNG imports preserve portraits. Public creator names and JanitorAI creator IDs supplied by JAR are retained as card attribution, including the creator's public profile link when available. Some JAR cards also carry a public SoundCloud track ID, retained as display metadata for compatible interfaces such as Janiverse.
 
 Each history import creates **one new normal Lumiverse chat**. It retains message text and macros, speaker names, alternate replies, the selected reply, and available timestamps. Historic persona names do not automatically bind a Lumiverse persona. Native timestamps have second precision. JAR's own JSONL exporter may already trim text or group alternatives; the bridge preserves the export it receives. Raw JAR JSON imports preserve literal text locally.
 

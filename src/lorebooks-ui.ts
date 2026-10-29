@@ -29,7 +29,7 @@ function keys(value: unknown): string[] { return Array.isArray(value) ? value.fi
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const confirmText: Record<Action, string> = {
-  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. This acts on the JanitorAI account signed into JAR (JAR recommends a throwaway account). The creator chose to keep this lorebook closed.',
+  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. This acts on the JanitorAI account signed into JAR. If your chat histories are already imported, sign JAR into a throwaway account first. The creator chose to keep this lorebook closed.',
   rebuild: 'JAR will send the captured lorebook text and this character’s card to the extraction LLM set in JAR’s ⚙ Settings. This uses that service’s quota or credit. The LLM infers trigger keywords, so review them after import.',
 };
 
@@ -46,6 +46,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const root = el('section', 'jar-lorebooks'); root.hidden = true; root.setAttribute('aria-label', 'Lorebooks from JAR');
   const heading = el('h2', '', 'Lorebooks');
   const intro = el('p', 'jar-help', 'Lorebooks JAR found for this character. Public lorebooks are imported and attached automatically when you import the character card; you can also import them on their own.');
+  // Rebuilt books are not attached automatically, so they get their own prompt above the list.
+  const callout = el('div', 'jar-lorebook-callout'); callout.hidden = true; callout.setAttribute('role', 'group'); callout.setAttribute('aria-label', 'Rebuilt lorebook');
+  const calloutText = el('p', '');
+  const calloutButton = button('', () => { const book = pendingRebuilt(); if (book) void importBook(book, !!character); }, 'jar-button jar-primary');
+  callout.append(calloutText, calloutButton);
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -86,7 +91,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   waitRow.append(waitText, stop);
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
-  root.append(heading, intro, refresh, books, closed, waitRow, status);
+  root.append(heading, intro, refresh, callout, books, closed, waitRow, status);
+  function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
   function setBusy(value: boolean) { busy = value; options.onBusy(value); render(); }
@@ -96,6 +102,15 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (disposed) return;
     const locked = busy || outerBusy || loading;
     refresh.disabled = locked; refresh.hidden = !!data;
+    const pending = pendingRebuilt();
+    callout.hidden = !pending;
+    if (pending) {
+      calloutText.textContent = character
+        ? `${pending.title} was rebuilt from the closed lorebook. It is not attached automatically because its keywords were inferred by an LLM; review it below, then add it to ${character.name}.`
+        : `${pending.title} was rebuilt from the closed lorebook. Import the character card to attach it, or import it on its own.`;
+      calloutButton.textContent = character ? `Import and attach to ${character.name}` : 'Import rebuilt lorebook';
+    }
+    calloutButton.disabled = locked;
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
     if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
@@ -125,7 +140,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   }
 
   function renderBook(book: JarLorebook, locked: boolean) {
-    const card = el('details', 'jar-lorebook');
+    const card = el('details', book.kind === 'rebuilt' ? 'jar-lorebook jar-lorebook-rebuilt' : 'jar-lorebook');
     const done = imported.get(bookKey(book)), unsure = uncertain.has(bookKey(book));
     const label = book.kind === 'rebuilt' ? `Rebuilt${book.model ? ` · ${book.model}` : ''}` : 'Public';
     card.append(el('summary', '', `${book.title} · ${book.entries.length} entr${book.entries.length === 1 ? 'y' : 'ies'} · ${label}`));
@@ -249,7 +264,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
-    setCharacter(value?: ImportedCharacter) { character = value; render(); autoImport(); },
+    setCharacter(value?: ImportedCharacter) {
+      character = value; render(); autoImport();
+      if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    },
     setBusy(value: boolean) { outerBusy = value && !busy; render(); autoImport(); },
     destroy() { disposed = true; generation++; abort.abort(); root.remove(); },
   };

@@ -217,6 +217,22 @@ describe('lorebook panel', () => {
     expect(posted).toHaveLength(1);
   });
 
+  test('a rebuilt book is offered in its own prompt and attached to the character on request', async () => {
+    const posted: any[] = [];
+    globalThis.fetch = (async (url: string, init: any) => { const body = JSON.parse(init.body); posted.push(body); return Response.json({ world_book: { id: `book-${posted.length}`, name: body.name }, entry_count: body.entries.length }, { status: 201 }); }) as any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) }
+      : request.command === 'attach-lorebook' ? { result: { characterId: request.characterId, worldBookIds: [request.worldBookId] } } : undefined);
+    p.ui.show('123-abc'); await settle();
+    const callout = p.ui.root.querySelector<HTMLElement>('.jar-lorebook-callout')!;
+    expect(callout.hidden).toBe(false); expect(callout.textContent).toContain('Import the character card to attach it');
+    p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); for (let i = 0; i < 5; i++) await settle();
+    expect(posted.map(book => book.name)).toEqual(['MENAGERIE']);
+    p.button('Import and attach to Arthur')!.click(); for (let i = 0; i < 5; i++) await settle();
+    expect(posted.map(book => book.name)).toEqual(['MENAGERIE', '2028 | ECLIPSE (rebuilt)']);
+    expect(p.requests.filter(r => r.command === 'attach-lorebook').map(r => r.worldBookId)).toEqual(['book-1', 'book-2']);
+    expect(callout.hidden).toBe(true);
+  });
+
   test('a public book can still be imported on its own before the card', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;

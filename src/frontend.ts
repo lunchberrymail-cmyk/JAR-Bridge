@@ -22,7 +22,12 @@ export function setup(ctx: SpindleFrontendContext) {
   let disposed = false, busy = false, generation = 0, connected = false, mode: 'archive' | 'file' | 'history' = 'archive';
   let captures: JarSummary[] = [], selected: JarCardResult | undefined, chosenFile: File | undefined;
   let imported: ImportedCharacter | undefined, uncertain = false;
+  // First visit opens the walkthrough. Without browser storage the guide stays
+  // behind its button rather than reopening on every visit.
+  const GUIDE_SEEN_KEY = 'jar_bridge:guide_seen';
+  const firstVisit = (() => { try { return globalThis.localStorage?.getItem(GUIDE_SEEN_KEY) === null; } catch { return false; } })();
   let guideVisible = false;
+  function markGuideSeen() { try { globalThis.localStorage?.setItem(GUIDE_SEEN_KEY, '1'); } catch { /* per-viewer convenience only */ } }
   let returnToHistory = false;
   const importedSources = new Map<string, ImportedCharacter>();
   const uncertainSources = new Set<string>();
@@ -35,7 +40,13 @@ export function setup(ctx: SpindleFrontendContext) {
   tab.root.classList.add('jar-bridge');
   const root = el('div', 'jar-shell');
   let window: SpindleModalHandle | undefined;
-  const expand = button('Open import assistant in a larger window', () => openWindow(), 'jar-button jar-expand'); tab.root.append(expand);
+  // The importer is laid out for the larger window; the drawer only points there
+  // unless the user chooses to stay in it.
+  const drawerCard = el('div', 'jar-drawer-card');
+  const expand = button('Open import assistant', () => openWindow(), 'jar-button jar-primary jar-expand');
+  const stay = button('Use it in this drawer instead', () => { tab.root.classList.remove('jar-drawer-collapsed'); stay.hidden = true; }, 'jar-link');
+  drawerCard.append(el('h2', '', 'Import from JanitorAI'), el('p', 'jar-help', 'The import assistant needs more room than this drawer. It opens in a larger window.'), expand, stay);
+  tab.root.classList.add('jar-drawer-collapsed'); tab.root.append(drawerCard);
   function openWindow() {
     if (disposed || window) return;
     const current = ctx.ui.showModal({ title: 'Import assistant', width: 880, maxHeight: 880 }); window = current;
@@ -81,7 +92,8 @@ export function setup(ctx: SpindleFrontendContext) {
   connectionHelp.append(el('summary', '', 'JAR won’t connect?'),
     el('p', 'jar-help', 'On Windows, open start.bat in the fully extracted JAR folder containing package.json. On macOS or Linux, run npm start there. Keep the console open; closing it stops JAR even if its browser tab is still open.'),
     el('p', 'jar-help', 'Run JAR on the same computer as the Lumiverse server. If Lumiverse runs on another computer or in Docker, its local address does not reach JAR on your browsing device. Use a card or history file if you cannot run both together.'),
-    el('p', 'jar-help', 'Use the port shown in JAR’s console. Once the connection check succeeds, use JAR’s Log in button before loading JanitorAI links. A newly extracted copy has its own login session and saved-card folder.'));
+    el('p', 'jar-help', 'Use the port shown in JAR’s console. Once the connection check succeeds, use JAR’s Log in button before loading JanitorAI links. A newly extracted copy has its own login session and saved-card folder.'),
+    button('First time with JAR? Set it up step by step', () => { showGuide(); guide.showSetup(); }, 'jar-link'));
   const connectionPanel = el('section', 'jar-connection-panel'); connectionPanel.setAttribute('aria-label', 'Local JAR connection');
   connectionPanel.append(connectionRow, connectedLabel, el('p', 'jar-help', 'Checks whether JAR is running. No JanitorAI login or saved cards are needed for this check.'), advancedAddress, connectionHelp);
   const loadSaved = button('Load saved cards', () => { void load(true); });
@@ -192,12 +204,12 @@ export function setup(ctx: SpindleFrontendContext) {
   }
   function hideGuide() {
     if (disposed || busy) return;
-    guideVisible = false; if (mode === 'history') chatHistory.activate(); updateControls();
+    markGuideSeen(); guideVisible = false; if (mode === 'history') chatHistory.activate(); updateControls();
     backToGuide.focus({ preventScroll: true }); root.scrollIntoView?.({ block: 'start', behavior: 'auto' });
   }
   function switchMode(next: typeof mode, historyStart?: HistoryStart) {
     if (disposed || busy) return;
-    generation++; client.cancel(); guideVisible = false; returnToHistory = false; mode = next; resetSelection();
+    markGuideSeen(); generation++; client.cancel(); guideVisible = false; returnToHistory = false; mode = next; resetSelection();
     archivePanel.hidden = next !== 'archive'; filePanel.hidden = next !== 'file'; historyPanel.hidden = next !== 'history';
     for (const [node, , kind] of sourceTabs) { node.setAttribute('aria-selected', String(next === kind)); node.tabIndex = next === kind ? 0 : -1; }
     actions.hidden = true; status.hidden = next === 'history';
@@ -335,6 +347,7 @@ export function setup(ctx: SpindleFrontendContext) {
     } finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
   }
   switchMode('archive');
+  if (firstVisit) showGuide();
   const stopOpen = ctx.events.on('jar_bridge:open_import', openWindow);
   const stopActivation = tab.onActivate(openWindow);
   return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); client.dispose(); tab.destroy(); removeStyle(); };

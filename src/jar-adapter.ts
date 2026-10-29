@@ -107,6 +107,20 @@ export function isRecordId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(value);
 }
 
+// JanitorAI appends a "created by <creator> <year>© on janitorai.com" line to the
+// greeting it serves, so JAR can list the first message again as an alternate.
+const watermark = /\s*created by \S+(?: \d{4})?\s*©?\s*on janitorai\.com\s*$/i;
+function greetingKey(value: string) { return value.replace(watermark, '').replace(/\s+/g, ' ').trim(); }
+/** Drop alternates that repeat the first message or another alternate, and probe leftovers like "." with no text. */
+export function distinctGreetings(first: string, alternates: string[]): string[] {
+  const seen = new Set([greetingKey(first)]);
+  return alternates.filter(greeting => {
+    const key = greetingKey(greeting);
+    if (!/[\p{L}\p{N}]/u.test(key) || seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+
 /** Match JAR's CCv2 export mapping; do not reconstruct cards from captured prompts. */
 export function toCardV2(recordValue: unknown, separationValue?: unknown): JarCardResult & { id: string } {
   const record = object(recordValue);
@@ -127,6 +141,7 @@ export function toCardV2(recordValue: unknown, separationValue?: unknown): JarCa
     creator: field(source, 'creator'), character_version: field(source, 'character_version', 'characterVersion'),
     extensions: cardMetadata(object(source.extensions)) as Record<string, unknown>,
   };
+  data.alternate_greetings = distinctGreetings(data.first_mes, data.alternate_greetings);
   // JAR's assembled definition omits the public catalog author. Preserve only
   // these public identity fields, never the capture, account, or session data.
   const meta = object(record.meta);

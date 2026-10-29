@@ -172,10 +172,17 @@ describe('JAR character adapter', () => {
       expect(toCardV2({ ...record(), meta: { soundcloud_track_id: track } }).card.data.extensions.jar_bridge).toBeUndefined();
     }
   });
+  test('drops the watermarked copy of the first message, repeats and probe leftovers from alternate greetings', () => {
+    const first = 'The air was thick with smoke.\n\n"Sit down."';
+    const alternates = ['A different scene.', '.', '>', `${first}\n\ncreated by visenyta 2026© on janitorai.com`, 'A  different\nscene.', 'Another scene.'];
+    const data = toCardV2({ ...record(), character: { ...record().character, firstMessage: first, alternateGreetings: alternates } }).card.data;
+    expect(data.first_mes).toBe(first);
+    expect(data.alternate_greetings).toEqual(['A different scene.', 'Another scene.']);
+  });
   test('maps all JAR behavior fields exactly and excludes archive metadata', () => {
     const input = record(); const result = toCardV2(input);
     expect(result.recordId).toBe(input.id); expect(result.id).toBe(input.id);
-    expect(result.card).toEqual({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: input.character.name, description: input.character.description, personality: 'Careful', scenario: 'A place', first_mes: 'Hello {{user}}', alternate_greetings: ['Alternative one', '', '  Alternative two  '], mes_example: '<START>\n{{char}}: Example', creator_notes: 'Creator note', tags: ['tag one', 'tag two'], system_prompt: '', post_history_instructions: '', creator: '', character_version: '', extensions: {} } });
+    expect(result.card).toEqual({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: input.character.name, description: input.character.description, personality: 'Careful', scenario: 'A place', first_mes: 'Hello {{user}}', alternate_greetings: ['Alternative one', '  Alternative two  '], mes_example: '<START>\n{{char}}: Example', creator_notes: 'Creator note', tags: ['tag one', 'tag two'], system_prompt: '', post_history_instructions: '', creator: '', character_version: '', extensions: {} } });
     expect(result.avatarDataUrl).toBe(input.character.avatarBase64);
     expect(JSON.stringify(result)).not.toContain('PRIVATE');
     expect(input.character.description).toBe('  Exact {{char}} definition\n\n');

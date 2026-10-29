@@ -34,12 +34,14 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
   const alternatives = el('div', 'jar-guide-alternatives');
   const janny = el('div'); janny.append(link('Open JannyAI ↗', 'https://jannyai.com/'), el('p', 'jar-help', 'On the JanitorAI character page, replace janitorai.com with jannyai.com in the address, keeping the rest of the link. Download the card if it is available.'));
   const datacat = el('div'); datacat.append(link('Open DataCat ↗', 'https://datacat.run/'), el('p', 'jar-help', 'Search for the character or creator, open the matching card and use its download option when available. Some records redirect to the original site instead.'));
-  alternatives.append(janny, datacat);
+  const sucker = el('div'); sucker.append(link('Open Sucker ↗', 'https://sucker.severian.dev/'), el('p', 'jar-help', 'Works as a proxy in JanitorAI’s API settings: chat with the character and it extracts the card along with the lorebook entries your messages trigger, including closed ones. Follow the instructions on its page. It only works when the creator allows proxies.'));
+  alternatives.append(janny, datacat, sucker);
   const mobileImport = el('button', 'jar-button jar-primary', 'Choose a downloaded card'); mobileImport.type = 'button';
   mobileImport.addEventListener('click', () => { if (!disposed && !busy) options.start('file'); });
   mobile.append(alternatives, el('p', 'jar-help', 'Save a PNG or JSON character card to your device’s Downloads or Files, then choose it below. A saved portrait or screenshot is not a character card. You review the card before importing it.'), mobileImport,
     el('p', 'jar-help jar-guide-note', 'Want your old conversation too? These card downloads do not bring your private JanitorAI chat history. After the card, add a JAR .json or SillyTavern .jsonl history file you already have, or use JAR on a computer to retrieve your chat.'),
-    el('p', 'jar-help', 'Card availability and completeness depend on the site and the creator’s settings. If one site has no download, try the other or use a card file you already have.'));
+    el('p', 'jar-help', 'Card availability and completeness depend on the site and the creator’s settings. If one site has no download, try the other or use a card file you already have.'),
+    el('p', 'jar-help', 'Got a lorebook file from Sucker or elsewhere? Import it from Lumiverse’s World Info panel, then attach it to the character there.'));
   root.append(mobile);
   const journey = el('ol', 'jar-guide-journey'); journey.setAttribute('aria-label', 'How the transfer works');
   for (const [name, description] of [
@@ -103,7 +105,8 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
     list([
       'In JAR’s top bar, click log in (🔓).',
       'A separate browser opens. Sign into JanitorAI there, then return to this Lumiverse importer.',
-    ]), el('p', 'jar-help jar-guide-note', 'You do not enter your JanitorAI password in this Lumiverse importer. Leave JAR running. You do not need to prepare or link cards in JAR’s window for the next steps.'));
+    ]), el('p', 'jar-help jar-guide-note', 'You do not enter your JanitorAI password in this Lumiverse importer. Leave JAR running. You do not need to prepare or link cards in JAR’s window for the next steps.'),
+    el('p', 'jar-help jar-guide-note', 'Your own account is only needed to read your own chat histories. Once you have brought them over, sign JAR into a throwaway JanitorAI account instead, especially before capturing closed lorebooks: capture sends messages from whichever account JAR is signed into.'));
 
   sections[3].append(el('p', 'jar-help', 'Use the character’s page link for this step, not the conversation link.'),
     el('p', 'jar-guide-example', 'Character link: janitorai.com/characters/…'),
@@ -194,6 +197,8 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
   showStep(0);
   return {
     root,
+    /** Jump to the JAR setup steps, e.g. after a failed connection check. */
+    showSetup() { if (disposed || busy) return; showRoute(false); showStep(1); },
     setBusy(value: boolean) { if (disposed) return; busy = value; for (const button of buttons) button.disabled = value; },
     destroy() { if (disposed) return; disposed = true; root.remove(); },
   };

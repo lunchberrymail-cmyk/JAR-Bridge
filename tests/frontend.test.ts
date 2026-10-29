@@ -13,8 +13,11 @@ beforeEach(() => {
   dom = new JSDOM('<!doctype html><body></body>', { url: 'http://192.168.1.2:11113' });
   globalThis.document = dom.window.document;
   granted = ['cors_proxy']; requests = []; revision = 'First version'; connectionError = '';
+  destroy = mount();
+});
+function mount() {
   const root = document.createElement('section'); document.body.append(root);
-  destroy = setup({
+  return setup({
     dom: { addStyle: () => () => {} },
     ui: { registerDrawerTab: () => ({ root, onActivate: () => () => {}, destroy() { root.remove(); } }) },
     events: { on: () => () => {} },
@@ -33,7 +36,7 @@ beforeEach(() => {
         result: { kind: 'character', sourceUrl: request.sourceUrl, recordId: card.recordId, card } });
     },
   } as any);
-});
+}
 afterEach(() => { destroy(); dom.window.close(); globalThis.document = originalDocument; });
 
 function preview() {
@@ -84,4 +87,37 @@ test('an empty fresh archive is shown as a successful connection with link and f
   expect(document.querySelector('.jar-connection-state')?.textContent).toBe('Connected · JAR 0.4.0');
   expect(document.querySelector('.jar-shell > .jar-status')?.textContent).toContain('This copy has no saved cards yet');
   expect(document.querySelector('.jar-shell > .jar-status')?.textContent).toContain('Paste a JanitorAI link');
+});
+
+test('the walkthrough opens on the first visit only, and stays closed without browser storage', () => {
+  const visible = () => !document.querySelector<HTMLElement>('.jar-guide')!.hidden;
+  expect(visible()).toBe(false);
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  try {
+    destroy(); Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: dom.window.localStorage });
+    destroy = mount(); expect(visible()).toBe(true);
+    [...document.querySelectorAll('button')].find(button => button.textContent === 'Back to importer')!.click();
+    expect(visible()).toBe(false);
+    destroy(); destroy = mount(); expect(visible()).toBe(false);
+    destroy(); Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('blocked'); } });
+    destroy = mount(); expect(visible()).toBe(false);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original); else delete (globalThis as any).localStorage;
+  }
+});
+
+test('the drawer points to the larger window until the user chooses to stay', () => {
+  const drawer = document.querySelector<HTMLElement>('.jar-drawer-card')!.parentElement!;
+  expect(drawer.classList.contains('jar-drawer-collapsed')).toBe(true);
+  expect(drawer.textContent).toContain('needs more room than this drawer');
+  [...drawer.querySelectorAll('button')].find(button => button.textContent === 'Use it in this drawer instead')!.click();
+  expect(drawer.classList.contains('jar-drawer-collapsed')).toBe(false);
+});
+
+test('a failed connection check links to the JAR setup steps', async () => {
+  connectionError = 'Could not reach JAR.';
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'Check JAR connection')!.click(); await settle();
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'First time with JAR? Set it up step by step')!.click();
+  expect(document.querySelector<HTMLElement>('.jar-guide')!.hidden).toBe(false);
+  expect(document.querySelector<HTMLElement>('#jar-guide-step-2')!.hidden).toBe(false);
 });
