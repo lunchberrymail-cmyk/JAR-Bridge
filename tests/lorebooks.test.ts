@@ -141,7 +141,7 @@ describe('JAR lorebook backend commands', () => {
     const list = [{ id: 'new-1', characterName: 'Arthur', ts: 30 }, { id: 'other-1', characterName: 'Arthur', ts: 20 }, { id: 'old-1', characterName: 'Arthur', ts: 10 }, { id: 'unrelated', characterName: 'Someone', ts: 40 }];
     const f = fixture({ cors: async url => url.endsWith('/api/captures') ? response(list) : url.endsWith('/api/capture') ? response({}) : response(records[url.split('/').pop()!]) });
     f.send({ id: 'l2', command: 'lorebooks', recordId: 'new-1' }); await wait(); await wait();
-    expect(f.replies[0].result).toMatchObject({ recordId: 'new-1', captured: true, earlierRecordAt: 100 });
+    expect(f.replies[0].result).toMatchObject({ recordId: 'new-1', captured: true, earlierRecordAt: 100, earlierRecordId: 'old-1' });
     expect(f.replies[0].result.books.map((book: any) => book.kind)).toEqual(['public', 'rebuilt']);
     expect(f.calls.some(call => call.url.endsWith('/unrelated'))).toBe(false);
     f.send({ id: 'c3', command: 'capture-lorebook', recordId: 'new-1', force: true }); await wait(); await wait();
@@ -234,11 +234,11 @@ describe('lorebook panel', () => {
   });
 
   test('a hidden card offers one capture for the definition and lorebooks, then asks for the card again', async () => {
-    let recovered = 0;
+    const recovered: string[] = [];
     const uncaptured = record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined });
     const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(uncaptured) }
       : request.command === 'capture-lorebook' ? { result: { state: 'done', lorebooks: toLorebooks(record({ capturedAt: 300, privateLorebookReconstruction: undefined })) } } : undefined,
-      undefined, () => { recovered++; });
+      undefined, id => { recovered.push(id); });
     p.ui.show('123-abc', true); await settle();
     expect(p.ui.root.textContent).toContain('Hidden character definition');
     expect(p.ui.root.textContent).toContain('collects its closed lorebooks (2028 | ECLIPSE)');
@@ -247,7 +247,7 @@ describe('lorebook panel', () => {
     expect(p.ui.root.textContent).toContain('also recovers the hidden character definition');
     p.button('Yes, capture')!.click(); for (let i = 0; i < 5; i++) await settle();
     expect(p.requests.find(r => r.command === 'capture-lorebook')).toMatchObject({ recordId: '123-abc' });
-    expect(recovered).toBe(1); expect(p.ui.root.textContent).toContain('Loading the recovered card');
+    expect(recovered).toEqual(['123-abc']); expect(p.ui.root.textContent).toContain('Loading the recovered card');
   });
 
   test('a hidden card whose creator forbids proxies offers no capture', async () => {

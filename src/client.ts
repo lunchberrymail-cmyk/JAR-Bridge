@@ -73,6 +73,7 @@ function isLorebooks(value: unknown, recordId?: string): boolean {
   const result = object(value);
   return !!result && isRecordId(result.recordId) && result.recordId === recordId && typeof result.allowProxy === 'boolean' && typeof result.captured === 'boolean'
     && typeof result.capturedAt === 'number' && typeof result.rebuiltAt === 'number' && Array.isArray(result.closedTitles)
+    && (result.earlierRecordId === undefined || isRecordId(result.earlierRecordId))
     && Array.isArray(result.books) && result.books.every(item => {
       const book = object(item);
       return !!book && typeof book.key === 'string' && (book.kind === 'public' || book.kind === 'rebuilt') && typeof book.title === 'string'

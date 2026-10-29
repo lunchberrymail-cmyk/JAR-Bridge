@@ -23,6 +23,8 @@ export interface JarLorebooksResult {
   books: JarLorebook[];
   /** Set when capture data comes from an earlier JAR record of the same character. */
   earlierRecordAt?: number;
+  /** The earlier JAR record holding that capture (and any definition it recovered). */
+  earlierRecordId?: string;
 }
 export type JarLorebookAction = { state: 'done' | 'running'; lorebooks: JarLorebooksResult };
 
@@ -120,7 +122,7 @@ export function characterIdOf(recordValue: unknown): string {
  */
 export function mergeEarlierCapture(fresh: JarLorebooksResult, earlier: JarLorebooksResult, earlierAt: number): JarLorebooksResult {
   return { ...fresh, captured: earlier.captured, capturedAt: earlier.capturedAt, rebuiltAt: earlier.rebuiltAt,
-    books: [...fresh.books.filter(book => book.kind === 'public'), ...earlier.books.filter(book => book.kind === 'rebuilt')], earlierRecordAt: earlierAt };
+    books: [...fresh.books.filter(book => book.kind === 'public'), ...earlier.books.filter(book => book.kind === 'rebuilt')], earlierRecordAt: earlierAt, earlierRecordId: earlier.recordId };
 }
 
 /** The exact body sent to Lumiverse's native world book importer. */

@@ -17,7 +17,7 @@ export interface LorebookOptions {
   onBusy: (busy: boolean) => void;
   pollMs?: number;
   /** A capture for a hidden-definition character finished; the card can be read again. */
-  onHiddenCardCaptured?: () => void;
+  onHiddenCardCaptured?: (recordId: string) => void;
 }
 
 const POLL_MS = 5000;
@@ -242,7 +242,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       message(!finished(data) ? 'JAR did not report a new result. Check JAR’s console, then try again.'
         : action === 'capture' ? 'Captured. Rebuild it with JAR’s LLM to get entries with trigger keywords.' : 'Rebuilt. Review the entries, then import the lorebook.', finished(data) ? 'success' : 'warning');
     } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'JAR could not finish this step.', 'error'); }
-    finally { if (!disposed && token === generation) { waiting = false; setBusy(false); if (recovered) options.onHiddenCardCaptured?.(); } }
+    finally { if (!disposed && token === generation) { waiting = false; setBusy(false); if (recovered && data) options.onHiddenCardCaptured?.(data.earlierRecordId || data.recordId); } }
   }
 
   async function importBook(book: JarLorebook, attach: boolean) {
