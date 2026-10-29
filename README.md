@@ -26,6 +26,8 @@ https://github.com/lunchberrymail-cmyk/JAR-Bridge
 
 **Operator installations work with every signed-in Lumiverse account**, including ordinary users. This is the default installation used by Lumiverse Desktop. All users share the JAR instance, its signed-in JanitorAI session, and its saved archive on the server computer. Use a dedicated throwaway JanitorAI account when sharing; imports still go into the requesting user's own Lumiverse library. No manual account binding or installation-scope change is needed.
 
+Any signed-in account can also use JAR's actions: read every saved card and conversation in JAR's archive, **delete records from JAR** (Clean up JAR), **capture** (sends messages from JAR's JanitorAI account) and **rebuild** (spends the LLM credit configured in JAR). Lumiverse decides the installation type, not the bridge, so whether to share JAR this way is the instance owner's call. To keep JAR to one account, install the extension personally instead.
+
 **Personal/user-scoped installations** remain restricted to their owning Lumiverse account. On the first explicit connection or link preview, the extension confirms its requesting window and remembers that account automatically. Another account cannot replace an existing personal binding. File imports work without a running JAR.
 
 Open **JAR Import** in Lumiverse's sidebar, or use Janiverse's import banner. The assistant opens with the import controls. **Help and import guide** is optional, and **Back to importer** preserves your current selection and destination. Closing and reopening the assistant preserves progress during the page session.

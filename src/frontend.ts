@@ -103,7 +103,7 @@ export function setup(ctx: SpindleFrontendContext) {
     button('First time with JAR? Set it up step by step', () => { showGuide(); guide.showSetup(); }, 'jar-link'));
   const connectionPanel = el('section', 'jar-connection-panel'); connectionPanel.setAttribute('aria-label', 'Local JAR connection');
   connectionPanel.append(connectionRow, connectedLabel, el('p', 'jar-help', 'Checks whether JAR is running. No JanitorAI login or saved cards are needed for this check.'), advancedAddress,
-    el('p', 'jar-help', 'Operator installations share JAR’s signed-in JanitorAI account and saved archive with signed-in Lumiverse users. Use a throwaway JanitorAI account when sharing.'), connectionHelp);
+    el('p', 'jar-help', 'Operator installations share JAR with every signed-in Lumiverse account: its JanitorAI account, saved archive, and its delete, capture and rebuild actions (which send messages and spend LLM credit). Use a throwaway JanitorAI account when sharing, or install personally to keep JAR to one account.'), connectionHelp);
   const loadSaved = button('Load saved cards', () => { void load(true); });
   const continueHistory = button('Continue to chat history →', () => switchMode('history'), 'jar-button jar-primary'); continueHistory.hidden = true;
   const results = el('section', 'jar-results'); results.hidden = true;
