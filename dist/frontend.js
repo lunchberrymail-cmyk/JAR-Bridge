@@ -146,7 +146,7 @@ async function kt(t,e,n){try{return await t.permissions.request(e,{reason:n})}ca
 .jar-cleanup-confirm[hidden] { display:none; }
 .jar-cleanup-confirm ul { margin:0 0 10px; padding-left:18px; }
 .jar-preview-top { flex-wrap:wrap; }
-.jar-book-status { margin-left:auto; min-width:0; max-width:100%; padding:10px 14px; border:1px solid #ffffff1f; border-radius:10px; background:#00000026; }
+.jar-book-status { flex:1 1 220px; max-width:420px; margin-left:auto; min-width:0; padding:10px 14px; border:1px solid #ffffff1f; border-radius:10px; background:#00000026; }
 .jar-book-status[hidden] { display:none; }
 .jar-book-status ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
 .jar-book-status li { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline; font-size:15px; font-weight:700; line-height:1.3; }
