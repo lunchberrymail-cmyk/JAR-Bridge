@@ -98,3 +98,19 @@
 .jar-destination h3 { font-size:13px; font-weight:600; margin:0 0 14px; }
 .jar-character-page { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 @media(max-width:520px) { .jar-shell { padding:24px 16px; }.jar-connect { flex-direction:column; align-items:stretch; }.jar-shell h1 { font-size:26px; }.jar-tab { font-size:12px; }.jar-success { flex-direction:column; align-items:flex-start; }.jar-guide{padding:16px}.jar-guide-actions{flex-direction:column;align-items:stretch}.jar-guide-actions .jar-button{white-space:normal;line-height:1.5}.jar-guide-actions .jar-link{flex-basis:auto} }
+.jar-lorebooks { border:1px solid #5b4c69; background:#2d2933; border-radius:12px; padding:18px; margin:20px 0; }
+.jar-lorebooks>h2 { margin:0 0 6px; font-size:18px; line-height:1.3; }
+.jar-lorebook { border-top:1px solid #494150; padding:12px 0; }
+.jar-lorebook>summary { font-size:13px; font-weight:600; cursor:pointer; color:#ddd0e9; overflow-wrap:anywhere; }
+.jar-lorebook-entries { max-height:320px; overflow-y:auto; margin:10px 0; padding-right:4px; }
+.jar-lorebook-entry { border-top:1px solid #ffffff12; padding:8px 0; }
+.jar-lorebook-entry>summary { font-size:12px; cursor:pointer; color:#d4c6e2; overflow-wrap:anywhere; }
+.jar-lorebook-entry p { font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; color:#bbb2c7; margin:6px 0 0; }
+.jar-lorebook-entry .jar-lorebook-keys { color:#cdb6e6; }
+.jar-lorebook-actions { border-top:0; padding-top:8px; }
+.jar-lorebook-actions>.jar-checkbox { margin-right:auto; padding:0; }
+.jar-lorebook-closed { border-top:1px solid #494150; padding-top:12px; margin-top:4px; }
+.jar-lorebook-closed>h3 { font-size:14px; margin:0 0 4px; color:#eee4f8; }
+.jar-lorebook-confirm { border:1px solid #8a6d5a; background:#3a2f2a; border-radius:9px; padding:12px; margin-top:12px; }
+.jar-lorebook-confirm .jar-help { color:#e7d2bd; margin-top:0; }
+.jar-lorebook-wait { display:flex; gap:12px; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; }

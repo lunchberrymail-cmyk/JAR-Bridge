@@ -1,4 +1,5 @@
 import type { JarConversationsResult, JarHistoryResult } from './conversation-adapter';
+import type { JarLorebookAction, JarLorebooksResult } from './lorebook-adapter';
 
 /** Only the exportable character is allowed across the backend/frontend boundary. */
 export interface CardV2 {
@@ -40,14 +41,17 @@ export interface JarLinkResult {
   history?: JarHistoryResult;
   warning?: string;
 }
-export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link' | 'cancel';
+export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
+  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
+  force?: boolean; characterId?: string; worldBookId?: string;
 }
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;
-  result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult;
+  result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult
+    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] };
   error?: string;
 }
 
@@ -73,7 +77,7 @@ function strings(source: Record<string, unknown>, canonical: string, alias?: str
 // Preserve card extensions while excluding capture/session data even if a future
 // JAR version nests that metadata inside a card extension.
 const privateKeys = /^(?:payload|rawpayload|capturepayload|probepayload|rawprompt|systemcontent|messages|conversations?|settings|sessions?|sessionid|sessiontokens?|tokens?|accesstoken|refreshtoken|apikey|authorization|cookies?|password|credentials|clientsecret|secret|bearertoken|proto|prototype|constructor)$/;
-function cardMetadata(value: unknown, depth = 0): unknown {
+export function cardMetadata(value: unknown, depth = 0): unknown {
   if (depth > 24) throw new Error('JAR character metadata is too deeply nested. Finish card in JAR, then try again.');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;

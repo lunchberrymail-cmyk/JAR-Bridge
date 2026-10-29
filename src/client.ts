@@ -6,12 +6,14 @@ import { parseJanitorLink, type JanitorLink } from './janitor-link';
 type Command = Exclude<JarRequest['command'], 'cancel'>;
 type Result = JarResponse['result'];
 type Context = Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>;
+export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId'>;
 type Pending = {
   id: string;
   command: Command;
   recordId?: string;
   chatId?: string;
   link?: JanitorLink;
+  extras?: RequestExtras;
   resolve: (result: Result) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -59,8 +61,22 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
       && typeof history.jsonl === 'string' && !!history.jsonl && typeof history.characterName === 'string' && typeof history.userName === 'string'
       && typeof history.messageCount === 'number' && Number.isSafeInteger(history.messageCount) && history.messageCount > 0;
   }
+  if (pending.command === 'lorebooks') return isLorebooks(result, pending.recordId);
+  if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
+  if (pending.command === 'attach-lorebook') return result.characterId === pending.extras?.characterId && Array.isArray(result.worldBookIds) && result.worldBookIds.includes(pending.extras?.worldBookId);
   if (pending.command !== 'card') return false;
   return isCardResult(result, pending.recordId);
+}
+
+function isLorebooks(value: unknown, recordId?: string): boolean {
+  const result = object(value);
+  return !!result && isRecordId(result.recordId) && result.recordId === recordId && typeof result.allowProxy === 'boolean' && typeof result.captured === 'boolean'
+    && typeof result.capturedAt === 'number' && typeof result.rebuiltAt === 'number' && Array.isArray(result.closedTitles)
+    && Array.isArray(result.books) && result.books.every(item => {
+      const book = object(item);
+      return !!book && typeof book.key === 'string' && (book.kind === 'public' || book.kind === 'rebuilt') && typeof book.title === 'string'
+        && typeof book.description === 'string' && Array.isArray(book.entries) && book.entries.every(entry => typeof object(entry)?.content === 'string');
+    });
 }
 
 function isCardResult(value: unknown, recordId?: string): boolean {
@@ -73,7 +89,7 @@ function isCardResult(value: unknown, recordId?: string): boolean {
 
 /** One request per frontend document, with no archive state retained after settlement. */
 export function createJarClient(ctx: Context): {
-  request(command: Command, baseUrl: string, recordId?: string, chatId?: string): Promise<Result>;
+  request(command: Command, baseUrl: string, recordId?: string, chatId?: string, link?: JanitorLink, extras?: RequestExtras): Promise<Result>;
   requestLink(baseUrl: string, sourceUrl: string): Promise<JarLinkResult>;
   cancel(): void;
   dispose(): void;
@@ -123,12 +139,12 @@ export function createJarClient(ctx: Context): {
     }
   });
 
-  function request(command: Command, baseUrl: string, recordId?: string, chatId?: string, link?: JanitorLink): Promise<Result> {
+  function request(command: Command, baseUrl: string, recordId?: string, chatId?: string, link?: JanitorLink, extras?: RequestExtras): Promise<Result> {
       if (disposed) return Promise.reject(new CancelledError());
       cancel();
       return new Promise<Result>((resolve, reject) => {
         const pending: Pending = {
-          id: `${prefix}-${++sequence}`, command, recordId, chatId, link, resolve, reject,
+          id: `${prefix}-${++sequence}`, command, recordId, chatId, link, extras, resolve, reject,
           timer: setTimeout(() => {
             if (!detach(pending)) return;
             reject(new Error('JAR Bridge did not reply. Reload the extension in Lumiverse, then check the JAR connection again.'));
@@ -137,7 +153,7 @@ export function createJarClient(ctx: Context): {
         };
         active = pending;
         try {
-          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}) } satisfies JarRequest);
+          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}) } satisfies JarRequest);
         } catch {
           if (detach(pending)) reject(new Error('Could not send this request to the JAR bridge. Try again.'));
         }

@@ -8,6 +8,7 @@ import { importNativeCard, ImportError, type ImportedCharacter } from './import-
 import { normalizeJarBase } from './transport';
 import { createChatHistory, type HistoryStart } from './chats-ui';
 import { createImportGuide } from './import-guide';
+import { createLorebooks } from './lorebooks-ui';
 import { parseJanitorLink } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
 
@@ -144,8 +145,11 @@ export function setup(ctx: SpindleFrontendContext) {
     onNavigate: () => window?.dismiss(),
   });
   const guide = createImportGuide({ start: next => switchMode(next) });
+  const lorebooks = createLorebooks(ctx, { client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); } });
   historyPanel.append(chatHistory.root);
-  root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions); tab.root.append(root);
+  root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions, lorebooks.root); tab.root.append(root);
+  /** Lorebooks belong to the previewed JAR record; reading them never captures anything. */
+  function syncLorebooks() { if (!disposed && !busy && mode === 'archive' && selected) { lorebooks.show(selected.recordId); lorebooks.setCharacter(imported); } }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = guideVisible || mode === 'history' || !text; }
   async function navigate(target: { kind: 'drawer_tab' | 'route'; id: string }, params?: Record<string, string>) {
@@ -177,10 +181,11 @@ export function setup(ctx: SpindleFrontendContext) {
     archivePanel.hidden = guideVisible || mode !== 'archive'; filePanel.hidden = guideVisible || mode !== 'file'; historyPanel.hidden = guideVisible || mode !== 'history';
     actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile); status.hidden = guideVisible || mode === 'history' || !status.textContent;
     preview.hidden = guideVisible || mode === 'history' || !selected;
+    lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !selected;
     continueHistory.hidden = !returnToHistory || !connected; continueHistory.disabled = busy;
     root.setAttribute('aria-busy', String(busy));
   }
-  function resetSelection() { selected = undefined; chosenFile = undefined; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
+  function resetSelection() { lorebooks.hide(); selected = undefined; chosenFile = undefined; imported = undefined; uncertain = false; pendingHistory = undefined; preview.hidden = true; noAvatar.hidden = true; noAvatarInput.checked = false; fileName.textContent = 'No file selected'; success.hidden = true; }
   function showGuide() {
     if (disposed || busy) return;
     generation++; client.cancel(); chatHistory.deactivate(); guideVisible = true; updateControls();
@@ -234,6 +239,7 @@ export function setup(ctx: SpindleFrontendContext) {
       } else message(result.warning || 'This link did not provide a complete character card. Try a downloaded card file instead.', 'warning');
     } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'Could not preview this link. Check JAR and its JanitorAI sign-in.', 'error'); }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
+    if (!historyStart && token === generation) syncLorebooks();
     if (historyStart && !disposed && token === generation) switchMode('history', historyStart);
     else if (!disposed && token === generation) {
       if (selected) { previewName.focus({ preventScroll: true }); preview.scrollIntoView?.({ block: 'start', behavior: 'auto' }); }
@@ -294,6 +300,7 @@ export function setup(ctx: SpindleFrontendContext) {
       selected = result; restoreOutcome(); renderPreview(); message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character has already been imported.' : 'Review the card, then choose Import to Lumiverse.');
     } catch (error) { if (!isAbort(error)) message(error instanceof Error ? error.message : 'Finish/export the character in JAR, then use Import card file.', 'error'); }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
+    if (token === generation) syncLorebooks();
   }
   function renderPreview() {
     if (!selected) return; const data = selected.card.data; preview.hidden = false; portrait.replaceChildren();
@@ -319,7 +326,7 @@ export function setup(ctx: SpindleFrontendContext) {
       const result = await importNativeCard(ctx, () => card ? createCardFile(card.card, omit ? null : card.avatarDataUrl) : Promise.resolve(file!), () => !disposed && token === generation, abort.signal);
       importedSources.set(key, result); uncertainSources.delete(key);
       if (disposed || token !== generation) return;
-      imported = result; message('Imported. You can use this character with your normal Lumiverse settings.', 'success');
+      imported = result; lorebooks.setCharacter(result); message('Imported. You can use this character with your normal Lumiverse settings.', 'success');
       try { ctx.events.emit('jar_bridge:imported', { characterId: result.id }); } catch { /* A notification failure must never retry the imported card. */ }
     } catch (error) {
       if (disposed || token !== generation || isAbort(error)) return;
@@ -330,5 +337,5 @@ export function setup(ctx: SpindleFrontendContext) {
   switchMode('archive');
   const stopOpen = ctx.events.on('jar_bridge:open_import', openWindow);
   const stopActivation = tab.onActivate(openWindow);
-  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
+  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
 }

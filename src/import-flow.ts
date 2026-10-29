@@ -47,3 +47,41 @@ export async function importNativeCard(
   if (typeof character.id !== 'string' || !character.id.trim()) throw new ImportError('Lumiverse did not return a character ID. Check your character library before trying again.', true);
   return { id: character.id, name: typeof character.name === 'string' ? character.name : file.name, ...(typeof character.image_id === 'string' ? { image_id: character.image_id } : {}) };
 }
+
+export type ImportedLorebook = { id: string; name: string; entryCount: number };
+export const MAX_LOREBOOK_REQUEST_BYTES = 10 * 1024 * 1024;
+
+/** One explicit native world book import of a reviewed SillyTavern-format book. */
+export async function importNativeLorebook(
+  ctx: Pick<SpindleFrontendContext, 'permissions'>,
+  book: { name: string; description: string; entries: Record<string, unknown>[] },
+  current: () => boolean,
+  signal: AbortSignal,
+): Promise<ImportedLorebook> {
+  const active = () => current() && !signal.aborted;
+  if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
+  let granted = await ctx.permissions.getGranted();
+  if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
+  if (!granted.includes('world_books')) {
+    granted = await requestPermissions(ctx, ['world_books'], 'Import the lorebook you reviewed into your Lumiverse World Info library.');
+    if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
+    if (!granted.includes('world_books')) throw new ImportError('Allow World Books to import this lorebook.');
+  }
+  // Snapshot before sending so a later selection change cannot alter the request.
+  const body = JSON.stringify({ name: book.name, description: book.description, entries: book.entries });
+  if (!book.entries.length) throw new ImportError('This lorebook has no entries to import.');
+  if (new TextEncoder().encode(body).byteLength > MAX_LOREBOOK_REQUEST_BYTES) throw new ImportError('This lorebook is too large to import. Download it from JAR and import the file in Lumiverse’s World Info instead.');
+  granted = await ctx.permissions.getGranted();
+  if (!active()) throw new DOMException('Import cancelled.', 'AbortError');
+  if (!granted.includes('world_books')) throw new ImportError('World Books permission was removed. The lorebook has not been imported.');
+  let response: Response;
+  try { response = await fetch('/api/v1/world-books/import', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body, signal }); }
+  catch { throw new ImportError('The import response was interrupted. Check your World Info library before trying again.', true); }
+  let data: Record<string, unknown>;
+  try { data = object(await response.json()); }
+  catch { throw new ImportError('Lumiverse returned an unreadable result. Check your World Info library before trying again.', true); }
+  if (!response.ok) throw new ImportError(response.status === 400 ? 'Lumiverse could not read this lorebook. Nothing was imported.' : 'Lumiverse could not confirm the import. Check your World Info library before trying again.', response.status !== 400);
+  const created = object(data.world_book);
+  if (typeof created.id !== 'string' || !created.id.trim()) throw new ImportError('Lumiverse did not return a lorebook ID. Check your World Info library before trying again.', true);
+  return { id: created.id, name: typeof created.name === 'string' ? created.name : book.name, entryCount: typeof data.entry_count === 'number' ? data.entry_count : book.entries.length };
+}

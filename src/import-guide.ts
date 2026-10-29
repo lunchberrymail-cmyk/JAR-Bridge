@@ -174,7 +174,7 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
   ]));
   root.append(detail('What comes over, and what do I set up here?', [
     'Cards bring their definition, portrait, greetings, supported metadata and embedded character lorebook. History brings messages and alternate replies, with the names and dates available in the source. Each import becomes a new normal Lumiverse chat.',
-    'Set up your API and prompts in Lumiverse before continuing the conversation. Persona definitions and bindings are not inferred from old chat names. Standalone lorebook import is not supported by this bridge yet.',
+    'Set up your API and prompts in Lumiverse before continuing the conversation. Persona definitions and bindings are not inferred from old chat names. Lorebooks are listed after a character link preview; closed ones need an explicit capture and rebuild first.',
   ]));
 
   function showStep(index: number, focus = false) {

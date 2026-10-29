@@ -1,0 +1,216 @@
+import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
+import type { createJarClient } from './client';
+import { importNativeLorebook, ImportError, type ImportedCharacter, type ImportedLorebook } from './import-flow';
+import { nativeLorebook, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
+
+type Client = ReturnType<typeof createJarClient>;
+type Action = 'capture' | 'rebuild';
+export interface LorebookOptions {
+  client: Client;
+  getBaseUrl: () => string;
+  /** Lorebook work shares the importer's single JAR request slot. */
+  onBusy: (busy: boolean) => void;
+  pollMs?: number;
+}
+
+const POLL_MS = 5000;
+const WAIT_LIMIT_MS = 10 * 60_000;
+const MAX_PREVIEW_ENTRIES = 200;
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; }
+function button(text: string, click: () => void, cls = 'jar-button') { const node = el('button', cls, text); node.type = 'button'; node.addEventListener('click', click); return node; }
+function isAbort(error: unknown) { return error instanceof Error && error.name === 'AbortError'; }
+function keys(value: unknown): string[] { return Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : []; }
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const confirmText: Record<Action, string> = {
+  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. This acts on the JanitorAI account signed into JAR (JAR recommends a throwaway account). The creator chose to keep this lorebook closed.',
+  rebuild: 'JAR will send the captured lorebook text and this character’s card to the extraction LLM set in JAR’s ⚙ Settings. This uses that service’s quota or credit. The LLM infers trigger keywords, so review them after import.',
+};
+
+/** Explicit lorebook import, capture and rebuild for the previewed JAR character. */
+export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>, options: LorebookOptions) {
+  let recordId: string | undefined, data: JarLorebooksResult | undefined, character: ImportedCharacter | undefined;
+  let busy = false, outerBusy = false, loading = false, waiting = false, stopWaiting = false, generation = 0, disposed = false, confirming: Action | undefined;
+  const imported = new Map<string, ImportedLorebook>();
+  const uncertain = new Set<string>();
+  const abort = new AbortController();
+
+  const root = el('section', 'jar-lorebooks'); root.hidden = true; root.setAttribute('aria-label', 'Lorebooks from JAR');
+  const heading = el('h2', '', 'Lorebooks');
+  const intro = el('p', 'jar-help', 'Lorebooks JAR found for this character. Import them into Lumiverse’s World Info, optionally attached to the character.');
+  const books = el('div', 'jar-lorebook-list');
+  const closed = el('div', 'jar-lorebook-closed');
+  const closedTitle = el('h3', '', 'Closed lorebook');
+  const closedText = el('p', 'jar-help');
+  const captureButton = button('Capture closed lorebook…', () => ask('capture'));
+  const rebuildButton = button('Rebuild with JAR’s LLM…', () => ask('rebuild'));
+  const closedActions = el('div', 'jar-actions jar-lorebook-actions'); closedActions.append(captureButton, rebuildButton);
+  const confirm = el('div', 'jar-lorebook-confirm'); confirm.hidden = true; confirm.setAttribute('role', 'group'); confirm.setAttribute('aria-label', 'Confirm lorebook action');
+  const confirmMessage = el('p', 'jar-help');
+  const confirmYes = button('', () => { const action = confirming; confirming = undefined; if (action) void run(action); }, 'jar-button jar-primary');
+  const confirmNo = button('Cancel', () => { confirming = undefined; render(); });
+  const confirmRow = el('div', 'jar-actions'); confirmRow.append(confirmNo, confirmYes); confirm.append(confirmMessage, confirmRow);
+  closed.append(closedTitle, closedText, closedActions, confirm);
+  const waitRow = el('div', 'jar-lorebook-wait'); waitRow.hidden = true;
+  const waitText = el('span', 'jar-help');
+  const stop = button('Stop waiting', () => { stopWaiting = true; options.client.cancel(); }, 'jar-link');
+  waitRow.append(waitText, stop);
+  const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+  const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
+  root.append(heading, intro, refresh, books, closed, waitRow, status);
+
+  function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
+  function setBusy(value: boolean) { busy = value; options.onBusy(value); render(); }
+  function bookKey(book: JarLorebook) { return `${recordId}\0${book.key}`; }
+
+  function render() {
+    if (disposed) return;
+    const locked = busy || outerBusy || loading;
+    refresh.disabled = locked; refresh.hidden = !!data;
+    books.replaceChildren();
+    for (const book of data?.books || []) books.append(renderBook(book, locked));
+    if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
+    const showClosed = !!data && (data.closedTitles.length > 0 || data.captured);
+    closed.hidden = !showClosed;
+    if (data && showClosed) {
+      const earlier = data.earlierRecordAt ? `Using the capture JAR saved with an earlier copy of this character (captured ${new Date(data.earlierRecordAt).toLocaleString()}). ` : '';
+      const titles = `${data.closedTitles.length ? `JAR could not download: ${data.closedTitles.join(', ')}. ` : ''}${earlier}`;
+      const rebuilt = data.books.some(book => book.kind === 'rebuilt');
+      closedText.textContent = !data.allowProxy
+        ? `${titles}This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook.`
+        : rebuilt ? `${titles}A rebuilt copy is listed above. You can capture or rebuild again if the lorebook changed.`
+          : data.captured ? `${titles}JAR has captured the closed lorebook text. Rebuild it with JAR’s LLM to get entries with trigger keywords.`
+            : `${titles}JAR can capture closed lorebook text, then rebuild it into entries with its LLM. Each step runs only when you confirm it.`;
+      captureButton.hidden = !data.allowProxy; captureButton.textContent = data.captured ? 'Capture again…' : 'Capture closed lorebook…';
+      rebuildButton.hidden = !data.captured; rebuildButton.textContent = rebuilt ? 'Rebuild again…' : 'Rebuild with JAR’s LLM…';
+    }
+    captureButton.disabled = locked || !!confirming; rebuildButton.disabled = locked || !!confirming;
+    confirm.hidden = !confirming;
+    if (confirming) { confirmMessage.textContent = confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
+    confirmYes.disabled = locked; confirmNo.disabled = locked;
+    waitRow.hidden = !waiting; stop.disabled = !waiting;
+    root.setAttribute('aria-busy', String(busy));
+  }
+
+  function renderBook(book: JarLorebook, locked: boolean) {
+    const card = el('details', 'jar-lorebook');
+    const done = imported.get(bookKey(book)), unsure = uncertain.has(bookKey(book));
+    const label = book.kind === 'rebuilt' ? `Rebuilt${book.model ? ` · ${book.model}` : ''}` : 'Public';
+    card.append(el('summary', '', `${book.title} · ${book.entries.length} entr${book.entries.length === 1 ? 'y' : 'ies'} · ${label}`));
+    if (book.description) card.append(el('p', 'jar-help', book.description));
+    const list = el('div', 'jar-lorebook-entries');
+    for (const entry of book.entries.slice(0, MAX_PREVIEW_ENTRIES)) {
+      const row = el('details', 'jar-lorebook-entry');
+      const words = keys(entry.key);
+      row.append(el('summary', '', `${typeof entry.comment === 'string' && entry.comment.trim() ? entry.comment.trim() : 'Untitled entry'}${entry.constant === true ? ' · always active' : ''}`),
+        el('p', 'jar-lorebook-keys', words.length ? `Keywords: ${words.join(', ')}` : 'No keywords'), el('p', '', String(entry.content)));
+      list.append(row);
+    }
+    if (book.entries.length > MAX_PREVIEW_ENTRIES) list.append(el('p', 'jar-help', `Showing the first ${MAX_PREVIEW_ENTRIES} entries. All ${book.entries.length} will be imported.`));
+    card.append(list);
+    if (book.kind === 'rebuilt') card.append(el('p', 'jar-help', 'Keywords were inferred by an LLM. Very general keywords can make an entry trigger too often; edit them in Lumiverse’s World Info after import.'));
+    const row = el('div', 'jar-actions jar-lorebook-actions');
+    const attach = el('label', 'jar-checkbox'); const attachInput = el('input'); attachInput.type = 'checkbox'; attachInput.checked = !!character;
+    attach.append(attachInput, el('span', '', character ? `Attach to ${character.name}` : 'Import the character card to attach this lorebook to it'));
+    attachInput.disabled = locked || !character || !!done; attach.hidden = !!done;
+    const go = button(done ? 'Imported' : 'Import lorebook', () => { void importBook(book, attachInput.checked); }, 'jar-button jar-primary');
+    go.disabled = locked || !!done || unsure;
+    row.append(attach, go);
+    if (unsure) row.append(button('I checked World Info — retry', () => { uncertain.delete(bookKey(book)); render(); }, 'jar-link'));
+    if (done) row.append(el('span', 'jar-help', `${done.name} is in your World Info.`));
+    card.append(row);
+    return card;
+  }
+
+  /**
+   * A read-only background request: it does not lock the importer. Any other
+   * importer request replaces it, leaving the explicit check button.
+   */
+  async function load() {
+    if (disposed || busy || outerBusy || loading || !recordId) return;
+    const token = ++generation, id = recordId;
+    loading = true; render(); message('Checking JAR for lorebooks…');
+    try {
+      const result = await options.client.request('lorebooks', options.getBaseUrl(), id) as JarLorebooksResult;
+      if (disposed || token !== generation) return;
+      data = result; message('');
+    } catch (error) { if (!disposed && token === generation) message(isAbort(error) ? '' : error instanceof Error ? error.message : 'Could not read lorebooks from JAR.', isAbort(error) ? '' : 'error'); }
+    finally { if (!disposed && token === generation) { loading = false; render(); } }
+  }
+
+  function ask(action: Action) { if (disposed || busy || outerBusy || !data) return; confirming = action; render(); confirmYes.focus?.({ preventScroll: true }); }
+
+  async function run(action: Action) {
+    if (disposed || busy || outerBusy || !recordId || !data) return;
+    const token = ++generation, id = recordId, before = data;
+    const verb = action === 'capture' ? 'capturing the closed lorebook' : 'rebuilding the lorebook with its LLM';
+    setBusy(true); message(`JAR is ${verb}…`);
+    const finished = (next: JarLorebooksResult) => action === 'capture'
+      ? next.captured && (next.capturedAt > before.capturedAt || !before.captured)
+      : next.rebuiltAt > before.rebuiltAt;
+    try {
+      const reply = await options.client.request(action === 'capture' ? 'capture-lorebook' : 'rebuild-lorebook', options.getBaseUrl(), id, undefined, undefined,
+        action === 'capture' && before.captured ? { force: true } : undefined) as JarLorebookAction;
+      if (disposed || token !== generation) return;
+      data = reply.lorebooks;
+      if (reply.state === 'running' && !finished(data)) {
+        // JAR keeps working after Lumiverse's proxy gives up; read the record until it lands.
+        waiting = true; stopWaiting = false; render();
+        const started = Date.now();
+        while (!disposed && token === generation && !stopWaiting) {
+          if (Date.now() - started > WAIT_LIMIT_MS) { message('JAR has not finished after 10 minutes. Check JAR’s console, then choose Check JAR for lorebooks.', 'warning'); data = undefined; return; }
+          waitText.textContent = `JAR is still ${verb}… ${Math.round((Date.now() - started) / 1000)} s`;
+          await sleep(options.pollMs ?? POLL_MS);
+          if (disposed || token !== generation || stopWaiting) break;
+          try { data = await options.client.request('lorebooks', options.getBaseUrl(), id) as JarLorebooksResult; }
+          catch (error) { if (isAbort(error) && stopWaiting) break; throw error; }
+          if (disposed || token !== generation) return;
+          if (finished(data)) break;
+        }
+        if (stopWaiting) { message('Stopped waiting. JAR may still finish; choose Check JAR for lorebooks later.', 'warning'); data = undefined; return; }
+      }
+      if (disposed || token !== generation) return;
+      message(!finished(data) ? 'JAR did not report a new result. Check JAR’s console, then try again.'
+        : action === 'capture' ? 'Captured. Rebuild it with JAR’s LLM to get entries with trigger keywords.' : 'Rebuilt. Review the entries, then import the lorebook.', finished(data) ? 'success' : 'warning');
+    } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'JAR could not finish this step.', 'error'); }
+    finally { if (!disposed && token === generation) { waiting = false; setBusy(false); } }
+  }
+
+  async function importBook(book: JarLorebook, attach: boolean) {
+    const key = bookKey(book);
+    if (disposed || busy || outerBusy || imported.has(key) || uncertain.has(key)) return;
+    const token = ++generation, target = attach ? character : undefined;
+    setBusy(true); message(`Importing ${book.title}…`);
+    try {
+      const result = await importNativeLorebook(ctx, nativeLorebook(book), () => !disposed && token === generation, abort.signal);
+      imported.set(key, result);
+      if (disposed || token !== generation) return;
+      if (!target) { message(`Imported ${result.entryCount} entries into World Info.`, 'success'); return; }
+      try {
+        await options.client.request('attach-lorebook', options.getBaseUrl(), undefined, undefined, undefined, { characterId: target.id, worldBookId: result.id });
+        if (!disposed && token === generation) message(`Imported ${result.entryCount} entries and attached them to ${target.name}.`, 'success');
+      } catch (error) {
+        if (!isAbort(error) && !disposed && token === generation) message(`Imported into World Info, but not attached: ${error instanceof Error ? error.message : 'attachment failed.'} Attach it from the character’s lorebook settings.`, 'warning');
+      }
+    } catch (error) {
+      if (disposed || token !== generation || isAbort(error)) return;
+      if (error instanceof ImportError && error.uncertain) uncertain.add(key);
+      message(error instanceof Error ? error.message : 'The lorebook could not be imported.', 'error');
+    } finally { if (!disposed && token === generation) setBusy(false); }
+  }
+
+  return {
+    root,
+    /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
+    show(id: string) {
+      if (disposed) return;
+      if (recordId !== id) { generation++; loading = false; recordId = id; data = undefined; confirming = undefined; message(''); }
+      root.hidden = false; render(); if (!data) void load();
+    },
+    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
+    setCharacter(value?: ImportedCharacter) { character = value; render(); },
+    setBusy(value: boolean) { outerBusy = value && !busy; render(); },
+    destroy() { disposed = true; generation++; abort.abort(); root.remove(); },
+  };
+}

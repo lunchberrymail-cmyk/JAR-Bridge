@@ -19,8 +19,18 @@ export function normalizeJarBase(value?: string): string {
 }
 
 export type JarRoute = { kind: 'version' } | { kind: 'captures' } | { kind: 'card'; recordId: string } | { kind: 'history'; chatId: string }
-  | { kind: 'inspect'; sourceUrl: string } | { kind: 'link-chat'; sourceUrl: string };
+  | { kind: 'inspect'; sourceUrl: string } | { kind: 'link-chat'; sourceUrl: string }
+  | { kind: 'capture'; recordId: string; force: boolean } | { kind: 'rebuild'; recordId: string };
 export interface JarTransportOptions { current: () => boolean }
+
+/**
+ * Capture and rebuild can outlast the host's 30s proxy limit. JAR keeps working
+ * after the proxy gives up, so a timeout on these routes means "check back".
+ */
+export class JarStillRunningError extends Error {
+  constructor() { super('JAR is still working on this lorebook.'); this.name = 'JarStillRunningError'; }
+}
+const LLM_SETTINGS_HELP = 'Check the extraction LLM in JAR’s ⚙ Settings (address, API key and model), then try again.';
 
 const JSON_CONTENT_TYPE = /\bapplication\/(?:[\w.-]+\+)?json\b/i;
 const MAX_ERROR_BODY_BYTES = 8192;
@@ -49,6 +59,15 @@ function knownJarError(response: Record<string, unknown>, route: JarRoute): stri
   }
   if (/\b(?:capture\s+)?browser\s+is\s+busy\b|\b(?:login|extraction|operation|request)\s+is\s+already\s+running\b/i.test(detail)) {
     return 'JAR’s browser is already handling another operation. Finish signing in or wait for its current operation to finish, then try again.';
+  }
+  if (route.kind === 'capture' && /\bforbids\s+proxy\b|PROXY_FORBIDDEN/i.test(detail)) {
+    return 'This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook. Its public lorebooks can still be imported.';
+  }
+  if (route.kind === 'rebuild') {
+    if (/\bLLM\s+is\s+not\s+configured\b/i.test(detail)) return `JAR has no extraction LLM set up. ${LLM_SETTINGS_HELP}`;
+    if (/\bExtraction\s+LLM\s+HTTP\s+(?:401|403)\b/i.test(detail)) return `JAR’s extraction LLM rejected its API key. ${LLM_SETTINGS_HELP}`;
+    if (/\bExtraction\s+LLM\b|\bparse\s+JSON\s+from\s+the\s+model\b|\bmodel\s+produced\s+no\s+entries\b/i.test(detail)) return `JAR’s extraction LLM did not return a usable lorebook. Try again, or choose a different model. ${LLM_SETTINGS_HELP}`;
+    if (/\bno\s+lorebook\s+text\b/i.test(detail)) return 'JAR found no closed-lorebook text in its capture. Capture the closed lorebook again, then rebuild.';
   }
   if (/^this conversation has no messages[.!]?$/i.test(detail.trim())) {
     return `JAR found this conversation, but it has no messages to import. Choose another conversation or a saved JAR JSON or SillyTavern JSONL file. ${HISTORY_FILE_HELP}`;
@@ -84,6 +103,8 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     else if (route.kind === 'captures') path = '/api/captures';
     else if (route.kind === 'card' && isRecordId(route.recordId)) path = `/api/captures/${encodeURIComponent(route.recordId)}`;
     else if (route.kind === 'history' && isChatId(route.chatId)) { path = '/api/chat-export'; body = JSON.stringify({ chat: route.chatId }); }
+    else if (route.kind === 'capture' && isRecordId(route.recordId)) { path = '/api/capture'; body = JSON.stringify({ id: route.recordId, ...(route.force === true ? { force: true } : {}) }); }
+    else if (route.kind === 'rebuild' && isRecordId(route.recordId)) { path = '/api/extract'; body = JSON.stringify({ id: route.recordId }); }
     else if (route.kind === 'inspect' || route.kind === 'link-chat') {
       const link = parseJanitorLink(route.sourceUrl);
       if (route.kind === 'inspect' && link.kind === 'character') { path = '/api/inspect'; body = JSON.stringify({ url: link.sourceUrl }); }
@@ -93,7 +114,12 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     else throw new Error('Invalid JAR character request.');
     let result: unknown;
     try { result = await api.cors(`${base}${path}`, { method: body ? 'POST' : 'GET', headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body } : {}), responseType: 'text' }); }
-    catch (error) { if (!options.current()) throw new Error('Request cancelled.'); throw new Error(connectionError(error)); }
+    catch (error) {
+      if (!options.current()) throw new Error('Request cancelled.');
+      const message = connectionError(error);
+      if ((route.kind === 'capture' || route.kind === 'rebuild') && /connection time limit/.test(message)) throw new JarStillRunningError();
+      throw new Error(message);
+    }
     if (!options.current()) throw new Error('Request cancelled.');
     // Recheck after each asynchronous call as well: revoked access must not expose
     // an already in-flight archive response or start another request.
@@ -106,7 +132,11 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
       ? `JAR could not load this conversation through the connection. ${HISTORY_FILE_HELP}`
       : route.kind === 'inspect' || route.kind === 'link-chat'
         ? `JAR could not load this link. Check that JAR is running and its browser is signed into JanitorAI, then try again.${route.kind === 'link-chat' ? ` ${HISTORY_FILE_HELP}` : ''}`
-        : 'JAR could not complete this request. Check JAR and try again.'));
+        : route.kind === 'capture'
+          ? 'JAR could not capture this closed lorebook. Check that JAR is signed into JanitorAI and not busy, then try again.'
+          : route.kind === 'rebuild'
+            ? `JAR could not rebuild this lorebook. ${LLM_SETTINGS_HELP}`
+            : 'JAR could not complete this request. Check JAR and try again.'));
     if (response.encoding || typeof response.body !== 'string') throw new Error('JAR returned an unexpected response.');
     const type = contentType(response);
     if (typeof type === 'string' && !JSON_CONTENT_TYPE.test(type)) throw new Error('This address did not return JAR data. Check the local JAR address.');

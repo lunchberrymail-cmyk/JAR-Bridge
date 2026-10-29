@@ -1,6 +1,6 @@
 # JAR Bridge
 
-Import character cards and old conversations into Lumiverse with an optional walkthrough, local previews, and a clear destination picker. JAR Bridge works on its own or alongside [Janiverse](https://github.com/lunchberrymail-cmyk/Janiverse).
+Import character cards, lorebooks and old conversations into Lumiverse with an optional walkthrough, local previews, and a clear destination picker. JAR Bridge works on its own or alongside [Janiverse](https://github.com/lunchberrymail-cmyk/Janiverse).
 
 This is an unofficial bridge for [alpha-omicron/JAR](https://github.com/alpha-omicron/JAR). It is not affiliated with JanitorAI or JAR. JAR is a separate application; installing this extension does not install or start it.
 
@@ -12,6 +12,7 @@ This is an unofficial bridge for [alpha-omicron/JAR](https://github.com/alpha-om
 | JanitorAI conversation link | The selected conversation, plus its character card when available | Yes |
 | PNG, JSON or CHARX character card | Character definition and supported card data; portraits when included | No |
 | JAR JSON or SillyTavern JSONL history file | Messages and alternate replies for a character you choose | No |
+| Lorebooks of a previewed JanitorAI character | Public lorebooks, and closed ones JAR captured and rebuilt | Yes |
 
 A character card and a conversation are different things. Bring both to resume an old chat, or import only the history if its character is already in your Lumiverse library. A portrait or screenshot by itself is not a character card.
 
@@ -65,6 +66,19 @@ For files, choose **Import card file** for PNG/JSON/CHARX cards or **Chat histor
 
 **Cards already saved in JAR** and **Saved conversations in JAR** are optional, initially collapsed sections for browsing JAR's existing records. The normal address is filled in; expand **Change JAR address** only for a different local port.
 
+## Import lorebooks
+
+After you preview a JanitorAI character link, a **Lorebooks** section lists what JAR has for that character. Expand a book to review its entries and keywords, then choose **Import lorebook**. If you imported the character card in the same session, **Attach to <character>** links the new lorebook to it. Books go to Lumiverse's World Info through its normal importer.
+
+- **Public lorebooks** that JAR downloaded are ready to import.
+- **Closed lorebooks** need two explicit steps, each with a confirmation:
+  1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR; JAR recommends a throwaway account. It is unavailable when the creator does not allow proxies.
+  2. **Rebuild with JAR's LLM**: JAR sends the captured text and the card to the extraction LLM set in JAR's **⚙ Settings**, which rebuilds entries with trigger keywords. This uses that service's quota or credit.
+
+A closed lorebook is one its creator chose not to share, and automated capture may break JanitorAI's terms. Capture only records entries that the probe actually triggered, so a large closed lorebook can come back incomplete. Rebuilt keywords are inferred by the LLM: review them, and edit very general ones in Lumiverse's World Info after import.
+
+Capture and rebuild can take longer than Lumiverse's 30-second connection limit. JAR keeps working after the connection closes, so the importer checks the character's JAR record every few seconds for up to 10 minutes. **Stop waiting** stops checking; JAR may still finish, and **Check JAR for lorebooks** reads the result later.
+
 ## Phone or tablet without JAR
 
 Use **Help and import guide → Phone or tablet · card file**. The guide links to [JannyAI](https://jannyai.com/) and [DataCat](https://datacat.run/) as character-card download alternatives, depending on availability and the creator's settings. Download an actual card, then return to **Import card file**.
@@ -79,6 +93,7 @@ These sites are not presented as a way to retrieve your private chat history. Fo
 - **Sign-in expired:** use JAR's **log in** browser, then retry in Lumiverse.
 - **JAR's browser is busy:** let its current operation finish before retrying.
 - **A chat works in JAR but not here:** download it from JAR as JSON or SillyTavern JSONL, then choose **Chat history → History file**. Lumiverse limits each proxied request to 30 seconds.
+- **A lorebook step fails:** keep JAR signed in and idle, and check its extraction LLM settings before rebuilding. If the creator does not allow proxies, only public lorebooks are available.
 - **The card is incomplete:** a saved/link record can contain only a name. Use a completed exported card or choose an existing character for the conversation. Hidden-card recovery stays a separate, explicit action in JAR and may send probes/create chats.
 - **The save result is interrupted:** check the destination character's chats or your library before explicitly retrying. A native save can finish even if its response was lost.
 
@@ -88,15 +103,18 @@ Cards use Lumiverse's normal importer and retain supported definition fields, gr
 
 Each history import creates **one new normal Lumiverse chat**. It retains message text and macros, speaker names, alternate replies, the selected reply, and available timestamps. Historic persona names do not automatically bind a Lumiverse persona. Native timestamps have second precision. JAR's own JSONL exporter may already trim text or group alternatives; the bridge preserves the export it receives. Raw JAR JSON imports preserve literal text locally.
 
-Existing chats stay separate. Lumiverse's usual API, prompts, presets and other settings govern continuation. Standalone lorebook import is not included. Files and serialized imports are limited to 10 MiB; malformed messages are rejected rather than silently skipped. Repeated/uncertain imports are guarded within the current page session.
+Each lorebook import creates **one new World Info book** with the reviewed entries. Attaching it adds the book to the character's existing lorebooks without removing any.
+
+Existing chats stay separate. Lumiverse's usual API, prompts, presets and other settings govern continuation. Files and serialized imports are limited to 10 MiB; malformed messages are rejected rather than silently skipped. Repeated/uncertain imports are guarded within the current page session.
 
 ## Permissions and privacy
 
 - **CORS proxy:** accesses the selected local JAR service. Link previews can ask JAR to use its signed-in browser to retrieve the selected character or conversation. Supported service addresses are HTTP loopback (`127.0.0.1`, `localhost` or `[::1]`). Use a trusted JAR service; Lumiverse's proxy follows redirects.
 - **Characters:** saves the explicitly reviewed card through Lumiverse's native importer.
 - **Chats:** saves the reviewed conversation for the character you explicitly choose.
+- **World Books:** saves a reviewed lorebook and, when you choose, attaches it to the character you just imported.
 
-Opening the assistant or Help does not connect, request access or import anything. Link previews may create/link a local JAR record, but do not send chat messages or create native Lumiverse chats/cards. The bridge does not read JAR settings, credentials or session files, run extraction probes, or upload captures to an external service. Only supported HTTPS JanitorAI character/chat URLs are accepted; tracking parameters are removed.
+Opening the assistant or Help does not connect, request access or import anything. Link previews may create/link a local JAR record, but do not send chat messages or create native Lumiverse chats/cards. Lorebook capture and rebuild run only after you confirm them for the previewed character: capture sends probe messages through JAR's JanitorAI session, and rebuild sends the captured text to the LLM configured in JAR. The bridge never runs either automatically, never reads JAR settings, credentials or session files, and never passes captured prompts to the browser, only the lorebook entries. Only supported HTTPS JanitorAI character/chat URLs are accepted; tracking parameters are removed.
 
 Backend replies are limited to the originating account and browser document. Selected chat/character identities are checked before returning history. File previews are parsed locally; raw settings, arbitrary chat metadata and unrelated profile data are not copied into native chats. An account/installation pin protects access to the signed-in JAR archive. A fresh personal installation provisions it only after a short-lived random challenge is acknowledged by the exact requesting owner document through Lumiverse's native session routing; unrelated users, expired proofs and cancelled requests cannot provision it. Existing bindings are checked without replacing them.
 
