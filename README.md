@@ -74,6 +74,8 @@ For files, choose **Import card file** for PNG/JSON/CHARX cards or **Chat histor
 
 **One JAR record per link.** JAR saves a new record every time it inspects a link, so the bridge remembers which record it used for each character link (in its own storage, kept across restarts) and reuses it, choosing the capture record once there is one. JAR only inspects a link again when that record was deleted. Public details are then not re-read on each preview; use JAR's **refresh public data** if the creator changed the page.
 
+**Clean up JAR.** In **Cards already saved in JAR**, **Clean up JAR…** lists every JAR record with its type (link preview or capture) and date. **Select duplicate previews** picks the link previews JAR made again for characters it already has: a character's captures are always kept, and without one its newest preview is kept. **Delete … from JAR…** asks for confirmation first, and warns when a capture is included, since its captured lorebook text and any recovered hidden card are lost. Deleting only removes records from JAR: characters, chats and lorebooks already imported into Lumiverse are not touched.
+
 **Cards already saved in JAR** and **Saved conversations in JAR** are optional, initially collapsed sections for browsing JAR's existing records. The normal address is filled in; expand **Change JAR address** only for a different local port.
 
 ## Import lorebooks
@@ -81,7 +83,7 @@ For files, choose **Import card file** for PNG/JSON/CHARX cards or **Chat histor
 After you preview a JanitorAI character link, a **Lorebooks** section lists what JAR has for that character. Expand a book to review its entries and keywords. Books go to Lumiverse's World Info through its normal importer.
 
 - **Public lorebooks** that JAR downloaded are imported and attached automatically when you import the character card. You can also import one on its own with **Import lorebook** before importing the card.
-- **Closed lorebooks** need two explicit steps, each with a confirmation:
+- **Closed lorebooks** are flagged right under the card name with a lock banner naming them and showing where they stand: *Not captured*, *Captured, not rebuilt*, *Rebuilt, ready to import*, *Imported*, or *Cannot be captured* when the creator does not allow proxies. **Go to lorebooks** jumps to the steps. They need two explicit steps, each with a confirmation:
   1. **Capture closed lorebook**: JAR's signed-in browser creates a temporary chat with the character, sends probe messages to trigger its lorebook entries, captures the prompt and deletes the chat. This acts on the JanitorAI account signed into JAR, so use a throwaway account (see above). It is unavailable when the creator does not allow proxies. Entries only appear when one of their keywords is in the trigger message, so the confirmation has a **Your words** box for names, places or other likely keywords, and an **Also include** list of what else JAR puts in that message (card, site description, scenario, first messages, lorebook names, JAR's saved default trigger text; all on by default, like JAR's own capture panel).
   2. **Rebuild with JAR's LLM**: JAR sends the captured text and the card to the extraction LLM set in JAR's **⚙ Settings**, which rebuilds entries with trigger keywords. This uses that service's quota or credit.
 

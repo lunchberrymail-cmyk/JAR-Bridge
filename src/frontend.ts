@@ -9,6 +9,7 @@ import { normalizeJarBase } from './transport';
 import { createChatHistory, type HistoryStart } from './chats-ui';
 import { createImportGuide } from './import-guide';
 import { createLorebooks } from './lorebooks-ui';
+import { createCleanup } from './cleanup-ui';
 import { parseJanitorLink } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
 
@@ -106,11 +107,19 @@ export function setup(ctx: SpindleFrontendContext) {
   const listHeading = el('div', 'jar-list-heading');
   const count = el('h2', '', 'Saved characters');
   const refresh = button('Refresh', () => { void load(false); }, 'jar-link');
-  listHeading.append(count, refresh);
+  const cleanupToggle = button('Clean up JAR…', () => { if (busy) return; if (cleanup.open) cleanup.hide(); else cleanup.show(captures); updateControls(); }, 'jar-link');
+  listHeading.append(count, refresh, cleanupToggle);
   const search = el('input', 'jar-input'); search.type = 'search'; search.placeholder = 'Find a character…'; search.setAttribute('aria-label', 'Search saved characters');
   const list = el('div', 'jar-list'); list.setAttribute('aria-label', 'Saved JAR characters');
   search.addEventListener('input', renderList);
   results.append(listHeading, search, list);
+  const cleanup = createCleanup({ client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); },
+    onDeleted: ids => {
+      captures = captures.filter(item => !ids.includes(item.id));
+      if (selected && ids.includes(selected.recordId)) resetSelection();
+      renderList(); updateControls();
+    } });
+  results.append(cleanup.root);
   const savedArchive = el('details', 'jar-saved-details');
   savedArchive.append(el('summary', '', 'Cards already saved in JAR'), connectionHint, loadSaved, continueHistory, results);
   advancedAddress.append(openJarHint);
@@ -167,6 +176,7 @@ export function setup(ctx: SpindleFrontendContext) {
     importCard: () => { if (disposed || busy || mode !== 'archive' || !selected || imported || uncertain) return false; void runImport(); return true; },
     canImportCard: () => mode === 'archive' && !!selected && !imported && !uncertain,
     onHiddenCardCaptured: id => { if (!disposed && mode === 'archive' && hiddenRecordId) void select({ id, name: 'Recovered card', source: 'JanitorAI link', ts: Date.now() }); } });
+  previewTop.after(lorebooks.banner);
   historyPanel.append(chatHistory.root);
   root.append(eyebrow, heading, intro, backToGuide, closeGuide, guide.root, tabs, connectionPanel, archivePanel, filePanel, historyPanel, preview, status, success, actions, lorebooks.root); tab.root.append(root);
   /** Lorebooks belong to the previewed JAR record; reading them never captures anything. */
@@ -205,6 +215,7 @@ export function setup(ctx: SpindleFrontendContext) {
     archivePanel.hidden = guideVisible || mode !== 'archive'; filePanel.hidden = guideVisible || mode !== 'file'; historyPanel.hidden = guideVisible || mode !== 'history';
     actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile); status.hidden = guideVisible || mode === 'history' || !status.textContent;
     preview.hidden = guideVisible || mode === 'history' || !selected;
+    cleanup.setBusy(busy); cleanupToggle.disabled = busy; cleanupToggle.textContent = cleanup.open ? 'Done cleaning up' : 'Clean up JAR…';
     lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !(selected || hiddenRecordId);
     continueHistory.hidden = !returnToHistory || !connected; continueHistory.disabled = busy;
     root.setAttribute('aria-busy', String(busy));
@@ -303,7 +314,7 @@ export function setup(ctx: SpindleFrontendContext) {
       captures = result.captures as JarSummary[]; connected = true;
       connectedLabel.textContent = typeof result.version === 'string' ? `Connected · JAR ${result.version}` : 'Connected to JAR';
       connectionHelp.open = false;
-      results.hidden = false; renderList(); message(captures.length ? 'Choose a character to preview.' : 'JAR is running. This copy has no saved cards yet. Paste a JanitorAI link to load a character, or choose Import card file.');
+      results.hidden = false; if (cleanup.open) cleanup.show(captures); renderList(); message(captures.length ? 'Choose a character to preview.' : 'JAR is running. This copy has no saved cards yet. Paste a JanitorAI link to load a character, or choose Import card file.');
     } catch (error) { if (!isAbort(error)) { connected = false; captures = []; results.hidden = true; connectedLabel.textContent = 'Could not load saved JAR cards'; connectionHelp.open = true; message(error instanceof Error ? error.message : 'Could not connect to JAR.', 'error'); } }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
   }
@@ -365,5 +376,5 @@ export function setup(ctx: SpindleFrontendContext) {
   if (firstVisit) showGuide();
   const stopOpen = ctx.events.on('jar_bridge:open_import', openWindow);
   const stopActivation = tab.onActivate(openWindow);
-  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
+  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); cleanup.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
 }

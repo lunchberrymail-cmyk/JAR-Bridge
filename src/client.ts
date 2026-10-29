@@ -6,7 +6,7 @@ import { parseJanitorLink, type JanitorLink } from './janitor-link';
 type Command = Exclude<JarRequest['command'], 'cancel'>;
 type Result = JarResponse['result'];
 type Context = Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>;
-export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId' | 'trigger'>;
+export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId' | 'trigger' | 'recordIds'>;
 type Pending = {
   id: string;
   command: Command;
@@ -65,6 +65,11 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
   if (pending.command === 'lorebooks') return isLorebooks(result, pending.recordId);
   if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
   if (pending.command === 'attach-lorebook') return result.characterId === pending.extras?.characterId && Array.isArray(result.worldBookIds) && result.worldBookIds.includes(pending.extras?.worldBookId);
+  if (pending.command === 'delete-records') {
+    const asked = new Set(pending.extras?.recordIds || []);
+    const ids = (value: unknown) => Array.isArray(value) && value.every(id => typeof id === 'string' && asked.has(id));
+    return ids(result.deleted) && ids(result.failed);
+  }
   if (pending.command !== 'card') return false;
   return isCardResult(result, pending.recordId);
 }
@@ -155,7 +160,7 @@ export function createJarClient(ctx: Context): {
         };
         active = pending;
         try {
-          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}), ...(extras?.trigger !== undefined ? { trigger: extras.trigger } : {}) } satisfies JarRequest);
+          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}), ...(extras?.trigger !== undefined ? { trigger: extras.trigger } : {}), ...(extras?.recordIds !== undefined ? { recordIds: extras.recordIds } : {}) } satisfies JarRequest);
         } catch {
           if (detach(pending)) reject(new Error('Could not send this request to the JAR bridge. Try again.'));
         }

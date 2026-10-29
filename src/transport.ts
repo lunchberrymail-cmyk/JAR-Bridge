@@ -21,7 +21,8 @@ export function normalizeJarBase(value?: string): string {
 
 export type JarRoute = { kind: 'version' } | { kind: 'captures' } | { kind: 'card'; recordId: string } | { kind: 'history'; chatId: string }
   | { kind: 'inspect'; sourceUrl: string } | { kind: 'link-chat'; sourceUrl: string }
-  | { kind: 'capture'; recordId: string; force: boolean; trigger?: JarLoreTrigger } | { kind: 'rebuild'; recordId: string };
+  | { kind: 'capture'; recordId: string; force: boolean; trigger?: JarLoreTrigger } | { kind: 'rebuild'; recordId: string }
+  | { kind: 'delete'; recordId: string };
 export interface JarTransportOptions { current: () => boolean }
 
 /**
@@ -102,7 +103,7 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     let path: string; let body: string | undefined;
     if (route.kind === 'version') path = '/api/version';
     else if (route.kind === 'captures') path = '/api/captures';
-    else if (route.kind === 'card' && isRecordId(route.recordId)) path = `/api/captures/${encodeURIComponent(route.recordId)}`;
+    else if ((route.kind === 'card' || route.kind === 'delete') && isRecordId(route.recordId)) path = `/api/captures/${encodeURIComponent(route.recordId)}`;
     else if (route.kind === 'history' && isChatId(route.chatId)) { path = '/api/chat-export'; body = JSON.stringify({ chat: route.chatId }); }
     else if (route.kind === 'capture' && isRecordId(route.recordId)) { path = '/api/capture'; body = JSON.stringify({ id: route.recordId, ...(route.force === true ? { force: true } : {}), ...(route.trigger ? { trigger: { ...route.trigger, custom: !!route.trigger.customText } } : {}) }); }
     else if (route.kind === 'rebuild' && isRecordId(route.recordId)) { path = '/api/extract'; body = JSON.stringify({ id: route.recordId }); }
@@ -114,7 +115,7 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     }
     else throw new Error('Invalid JAR character request.');
     let result: unknown;
-    try { result = await api.cors(`${base}${path}`, { method: body ? 'POST' : 'GET', headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body } : {}), responseType: 'text' }); }
+    try { result = await api.cors(`${base}${path}`, { method: route.kind === 'delete' ? 'DELETE' : body ? 'POST' : 'GET', headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body } : {}), responseType: 'text' }); }
     catch (error) {
       if (!options.current()) throw new Error('Request cancelled.');
       const message = connectionError(error);

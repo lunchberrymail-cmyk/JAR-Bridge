@@ -133,3 +133,31 @@
 .jar-lorebook-sources>summary { color:#e7d2bd; font-size:12px; cursor:pointer; }
 .jar-lorebook-sources .jar-checkbox { padding:8px 0 0; }
 .jar-lorebook-wait { display:flex; gap:12px; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap; }
+.jar-danger { background:#b85a5a; color:#fff3f3; border-color:#b85a5a; font-weight:650; }
+.jar-danger:disabled { opacity:.5; }
+.jar-cleanup { border:1px solid #ffffff1a; border-radius:12px; padding:14px; margin-top:14px; }
+.jar-cleanup[hidden] { display:none; }
+.jar-cleanup h3 { margin:0 0 6px; font-size:15px; }
+.jar-cleanup-shortcuts { justify-content:flex-start; gap:14px; margin:10px 0; }
+.jar-cleanup-list { max-height:320px; overflow:auto; border-top:1px solid #ffffff12; border-bottom:1px solid #ffffff12; margin-bottom:12px; }
+.jar-cleanup-row { padding:8px 2px; border-bottom:1px solid #ffffff0a; }
+.jar-cleanup-row span { overflow-wrap:anywhere; }
+.jar-cleanup-confirm { border:1px solid #b85a5a; background:#3a2626; border-radius:9px; padding:12px; margin-top:12px; color:#f1d6d6; font-size:12px; }
+.jar-cleanup-confirm[hidden] { display:none; }
+.jar-cleanup-confirm ul { margin:0 0 10px; padding-left:18px; }
+.jar-closed-banner { display:flex; gap:12px; align-items:flex-start; margin:14px 0 4px; padding:12px 14px; border-radius:10px; border:1px solid; border-left-width:5px; }
+.jar-closed-banner[hidden] { display:none; }
+.jar-closed-banner-icon { flex:none; display:flex; width:36px; height:36px; border-radius:50%; align-items:center; justify-content:center; }
+.jar-closed-banner-body { min-width:0; flex:1; }
+.jar-closed-banner-head { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
+.jar-closed-banner-head strong { font-size:13px; overflow-wrap:anywhere; }
+.jar-closed-banner-state { font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:2px 8px; border-radius:999px; }
+.jar-closed-banner p { margin:4px 0 6px; font-size:12px; line-height:1.5; }
+.jar-closed-banner[data-tone="missing"] { background:#3d3022; border-color:#d39a52; color:#f3dfc4; }
+.jar-closed-banner[data-tone="missing"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="missing"] .jar-closed-banner-state { background:#d39a52; color:#2a1d0e; }
+.jar-closed-banner[data-tone="blocked"] { background:#3a2626; border-color:#c46a6a; color:#f1d6d6; }
+.jar-closed-banner[data-tone="blocked"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="blocked"] .jar-closed-banner-state { background:#c46a6a; color:#2a1212; }
+.jar-closed-banner[data-tone="ready"] { background:#342b48; border-color:#b9a0e8; color:#ece2ff; }
+.jar-closed-banner[data-tone="ready"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="ready"] .jar-closed-banner-state { background:#b9a0e8; color:#21182c; }
+.jar-closed-banner[data-tone="done"] { background:#24352b; border-color:#6fbf8a; color:#d6f0de; }
+.jar-closed-banner[data-tone="done"] .jar-closed-banner-icon, .jar-closed-banner[data-tone="done"] .jar-closed-banner-state { background:#6fbf8a; color:#10261a; }

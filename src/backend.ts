@@ -1,5 +1,5 @@
 import type { SpindleAPI } from 'lumiverse-spindle-types';
-import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarLinkResult, type JarResponse } from './jar-adapter';
+import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarDeleteResult, type JarLinkResult, type JarResponse } from './jar-adapter';
 import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRoute } from './transport';
 import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
@@ -11,7 +11,7 @@ type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout
 const requestChannel = 'jar_bridge:request';
 const responseChannel = 'jar_bridge:response';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook']);
+const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records']);
 /** Lumiverse entity IDs are opaque; accept only short route-safe tokens. */
 function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -224,6 +224,19 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (!current()) return;
             result = { state, lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;
           }
+        } else if (command === 'delete-records') {
+          // Removes records from JAR only. Nothing in Lumiverse refers to JAR records,
+          // so imported characters, chats and lorebooks are unaffected.
+          const ids = request.recordIds;
+          if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every(isRecordId) || new Set(ids).size !== ids.length) throw new Error('Choose the JAR records to delete again.');
+          const deleted: string[] = [], failed: string[] = [];
+          for (const id of ids) {
+            if (!current()) return;
+            try { (object(await ownedGet({ kind: 'delete', recordId: id })).ok === true ? deleted : failed).push(id); }
+            catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; failed.push(id); }
+          }
+          for (const [key, target] of captureTargets) if (deleted.includes(target)) captureTargets.delete(key);
+          result = { deleted, failed } satisfies JarDeleteResult;
         } else if (command === 'card' || command === 'conversations' || command === 'history') {
           if (!isRecordId(request.recordId)) throw new Error('Choose a character from the JAR list.');
           if (command === 'history' && !isChatId(request.chatId)) throw new Error('Choose a conversation linked to this JAR character.');

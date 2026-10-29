@@ -64,6 +64,17 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const calloutWithCard = button('Import card and attach', () => { if (pendingRebuilt() && options.importCard?.()) { rebuiltAfterCard = true; render(); } }, 'jar-button');
   const calloutRow = el('div', 'jar-actions'); calloutRow.append(calloutButton, calloutWithCard);
   callout.append(calloutText, calloutRow);
+  // A banner for the card preview: closed lorebooks are not part of the card, so
+  // their state is shown where the card is reviewed, with a jump to the steps.
+  const banner = el('div', 'jar-closed-banner'); banner.hidden = true; banner.setAttribute('role', 'status');
+  const bannerIcon = el('span', 'jar-closed-banner-icon'); bannerIcon.setAttribute('aria-hidden', 'true');
+  bannerIcon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
+  const bannerBody = el('div', 'jar-closed-banner-body');
+  const bannerTitle = el('strong', ''); const bannerState = el('span', 'jar-closed-banner-state'); const bannerText = el('p', '');
+  const bannerHead = el('div', 'jar-closed-banner-head'); bannerHead.append(bannerTitle, bannerState);
+  const bannerGo = button('Go to lorebooks ↓', () => { root.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); (pendingRebuilt() ? calloutButton : captureButton).focus?.({ preventScroll: true }); }, 'jar-link');
+  bannerBody.append(bannerHead, bannerText, bannerGo);
+  banner.append(bannerIcon, bannerBody);
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
@@ -151,6 +162,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     pickerSelect.value = existing?.id || '';
     pickerSelect.disabled = pickerSearch.disabled = pickerFind.disabled = locked;
     renderNotice(locked);
+    renderBanner();
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
     if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
@@ -186,6 +198,27 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     confirmYes.disabled = locked || (confirming === 'capture' && empty); confirmNo.disabled = locked;
     waitRow.hidden = !waiting; stop.disabled = !waiting;
     root.setAttribute('aria-busy', String(busy));
+  }
+
+  function renderBanner() {
+    const count = data?.closedTitles.length || 0;
+    banner.hidden = !data || !count || hiddenCard;
+    if (!data || banner.hidden) return;
+    const rebuilt = data.books.filter(book => book.kind === 'rebuilt');
+    const done = rebuilt.length > 0 && rebuilt.every(book => imported.has(bookKey(book)));
+    const target = attachTarget();
+    const [tone, state, text] = !rebuilt.length && !data.allowProxy
+      ? ['blocked', 'Cannot be captured', 'The creator does not allow proxies, so JAR cannot capture it. The card imports without it.']
+      : !data.captured && !rebuilt.length
+        ? ['missing', 'Not captured', 'It is not part of the card. Capture it with JAR, then rebuild it, to bring it into Lumiverse.']
+        : !rebuilt.length
+          ? ['missing', 'Captured, not rebuilt', 'JAR has the captured text. Rebuild it with JAR’s LLM before it can be imported.']
+          : done
+            ? ['done', 'Imported', 'The rebuilt copy is in your World Info. Review its keywords there.']
+            : ['ready', 'Rebuilt, ready to import', target ? `Import it and attach it to ${target.name}.` : 'Import it with the card, or on its own.'];
+    banner.dataset.tone = tone;
+    bannerTitle.textContent = count === 1 ? `Closed lorebook: ${data.closedTitles[0]}` : `${count} closed lorebooks: ${data.closedTitles.join(', ')}`;
+    bannerState.textContent = state; bannerText.textContent = text;
   }
 
   function renderNotice(locked: boolean) {
@@ -345,19 +378,21 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
 
   return {
     root,
+    /** Closed-lorebook banner for the card preview; the panel keeps it up to date. */
+    banner,
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
       if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
-    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; message(''); if (busy) setBusy(false); },
+    hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
     setCharacter(value?: ImportedCharacter) {
       character = value; render(); autoImport();
       if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
       else if (value && notice.dataset.tone === 'warning' && !notice.hidden) notice.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     },
     setBusy(value: boolean) { outerBusy = value && !busy; render(); autoImport(); },
-    destroy() { disposed = true; generation++; abort.abort(); root.remove(); },
+    destroy() { disposed = true; generation++; abort.abort(); root.remove(); banner.remove(); },
   };
 }

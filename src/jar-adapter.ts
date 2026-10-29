@@ -32,6 +32,7 @@ export interface JarCardResult {
   avatarDataUrl?: string;
   warnings?: string[];
 }
+export interface JarDeleteResult { deleted: string[]; failed: string[] }
 export interface JarLinkResult {
   kind: 'character' | 'chat';
   sourceUrl: string;
@@ -44,18 +45,20 @@ export interface JarLinkResult {
   hiddenCard?: true;
 }
 export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
-  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'cancel';
+  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
   force?: boolean; characterId?: string; worldBookId?: string;
   /** Capture trigger sources and the user's own words; the backend checks them. */
   trigger?: unknown;
+  /** JAR records to delete from JAR (never from Lumiverse). */
+  recordIds?: string[];
 }
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;
   result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult
-    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] };
+    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] } | JarDeleteResult;
   error?: string;
 }
 
