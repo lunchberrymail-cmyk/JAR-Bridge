@@ -113,6 +113,12 @@
 .jar-lorebook-closed>h3 { font-size:14px; margin:0 0 4px; color:#eee4f8; }
 .jar-lorebook-confirm { border:1px solid #8a6d5a; background:#3a2f2a; border-radius:9px; padding:12px; margin-top:12px; }
 .jar-lorebook-confirm .jar-help { color:#e7d2bd; margin-top:0; }
+.jar-lorebook-notice { border:1px solid #8a7a5a; background:#33302a; border-radius:10px; padding:12px 14px; margin:12px 0; color:#eadfc8; font-size:12px; line-height:1.5; }
+.jar-lorebook-notice[hidden] { display:none; }
+.jar-lorebook-notice[data-tone="warning"] { border-color:#c8955a; background:#3d3022; }
+.jar-lorebook-notice ul { margin:6px 0 0; padding-left:18px; }
+.jar-lorebook-notice li { margin:3px 0; }
+.jar-lorebook-notice .jar-button { margin-top:10px; }
 .jar-lorebook-callout { border:1px solid #b9a0e8; background:#3a2f4d; border-radius:10px; padding:14px; margin:12px 0; }
 .jar-lorebook-callout[hidden] { display:none; }
 .jar-lorebook-callout p { margin:0 0 12px; color:#efe4ff; font-size:13px; line-height:1.5; }

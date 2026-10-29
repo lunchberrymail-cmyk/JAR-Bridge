@@ -250,6 +250,31 @@ describe('lorebook panel', () => {
     expect(recovered).toEqual(['123-abc']); expect(p.ui.root.textContent).toContain('Loading the recovered card');
   });
 
+  test('a capture without a rebuild warns that nothing closed can be imported yet', async () => {
+    const twoClosed = { publicLorebooks: [{ id: 'closed-1', title: 'ONE', accessible: false }, { id: 'closed-2', title: 'TWO', accessible: false }] };
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ ...twoClosed, privateLorebookReconstruction: undefined })) } : undefined);
+    p.ui.show('123-abc'); p.ui.setCharacter({ id: 'char-1', name: 'Arthur' }); await settle();
+    const notice = p.ui.root.querySelector<HTMLElement>('.jar-lorebook-notice')!;
+    expect(notice.hidden).toBe(false); expect(notice.dataset.tone).toBe('warning');
+    expect(notice.textContent).toContain('Captured, not rebuilt yet');
+    expect(notice.textContent).toContain('combines all 2 closed lorebooks (ONE, TWO)');
+    expect(notice.textContent).toContain('Arthur was imported without the closed lorebook');
+    [...notice.querySelectorAll('button')].find(b => b.textContent === 'Rebuild with JAR’s LLM…')!.click(); await settle();
+    expect(p.button('Yes, rebuild')).toBeDefined();
+  });
+
+  test('a rebuilt lorebook keeps a note about missing entries and guessed keywords; no note before capture', async () => {
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) } : undefined);
+    p.ui.show('123-abc'); await settle();
+    const notice = p.ui.root.querySelector<HTMLElement>('.jar-lorebook-notice')!;
+    expect(notice.hidden).toBe(false); expect(notice.dataset.tone).toBe('info');
+    expect(notice.textContent).toContain('some entries can be missing');
+    expect([...notice.querySelectorAll('button')].every(b => b.hidden)).toBe(true);
+    const fresh = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined })) } : undefined);
+    fresh.ui.show('123-abc'); await settle();
+    expect(fresh.ui.root.querySelector<HTMLElement>('.jar-lorebook-notice')!.hidden).toBe(true);
+  });
+
   test('a hidden card whose creator forbids proxies offers no capture', async () => {
     const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record({ meta: { allow_proxy: false }, capturedAt: undefined, payload: null, privateLorebookReconstruction: undefined })) } : undefined);
     p.ui.show('123-abc', true); await settle();

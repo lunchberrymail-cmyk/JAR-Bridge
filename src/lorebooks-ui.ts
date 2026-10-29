@@ -53,6 +53,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const calloutText = el('p', '');
   const calloutButton = button('', () => { const book = pendingRebuilt(); if (book) void importBook(book, !!character); }, 'jar-button jar-primary');
   callout.append(calloutText, calloutButton);
+  // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
+  const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
+  const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
+  const noticeRebuild = button('Rebuild with JAR’s LLM…', () => ask('rebuild'), 'jar-button jar-primary');
+  notice.append(noticeTitle, noticeList, noticeRebuild);
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -93,7 +98,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   waitRow.append(waitText, stop);
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
-  root.append(heading, intro, refresh, callout, books, closed, waitRow, status);
+  root.append(heading, intro, refresh, notice, callout, books, closed, waitRow, status);
   function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !imported.has(bookKey(book)) && !uncertain.has(bookKey(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
@@ -113,6 +118,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       calloutButton.textContent = character ? `Import and attach to ${character.name}` : 'Import rebuilt lorebook';
     }
     calloutButton.disabled = locked;
+    renderNotice(locked);
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
     if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
@@ -148,6 +154,24 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     confirmYes.disabled = locked || (confirming === 'capture' && empty); confirmNo.disabled = locked;
     waitRow.hidden = !waiting; stop.disabled = !waiting;
     root.setAttribute('aria-busy', String(busy));
+  }
+
+  function renderNotice(locked: boolean) {
+    const rebuilt = !!data?.books.some(book => book.kind === 'rebuilt');
+    notice.hidden = !data || hiddenCard || !(data.captured || rebuilt);
+    if (!data || notice.hidden) { noticeRebuild.hidden = true; return; }
+    const waitingRebuild = data.captured && !rebuilt;
+    noticeTitle.textContent = waitingRebuild ? 'Captured, not rebuilt yet' : 'Check the rebuilt lorebook';
+    const points = [
+      ...(waitingRebuild ? ['JAR has only the raw captured text. Nothing from the closed lorebook can be imported until it is rebuilt with JAR’s LLM.'] : []),
+      'Capture only records entries whose keywords appeared in the trigger message, so some entries can be missing. Capture again with more of your own words to find more.',
+      'Trigger keywords are guessed by an LLM. Very general ones can make an entry fire too often; edit them in World Info after import.',
+      ...(data.closedTitles.length > 1 ? [`JAR combines all ${data.closedTitles.length} closed lorebooks (${data.closedTitles.join(', ')}) into one rebuilt book.`] : []),
+      ...(waitingRebuild && character ? [`${character.name} was imported without the closed lorebook.`] : []),
+    ];
+    noticeList.replaceChildren(...points.map(point => el('li', '', point)));
+    noticeRebuild.hidden = !waitingRebuild; noticeRebuild.disabled = locked || !!confirming;
+    notice.dataset.tone = waitingRebuild ? 'warning' : 'info';
   }
 
   function renderBook(book: JarLorebook, locked: boolean) {
@@ -280,6 +304,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     setCharacter(value?: ImportedCharacter) {
       character = value; render(); autoImport();
       if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      else if (value && notice.dataset.tone === 'warning' && !notice.hidden) notice.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     },
     setBusy(value: boolean) { outerBusy = value && !busy; render(); autoImport(); },
     destroy() { disposed = true; generation++; abort.abort(); root.remove(); },
