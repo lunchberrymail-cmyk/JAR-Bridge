@@ -156,7 +156,7 @@ export function setup(ctx: SpindleFrontendContext) {
     const start: HistoryStart = { character: imported, source: mode === 'file' ? 'file' : 'jar', ...(mode === 'archive' && selected ? { recordId: selected.recordId } : {}), ...(pendingHistory ? { preparedHistory: pendingHistory } : {}) };
     switchMode('history', start);
   }, 'jar-button jar-primary'); success.append(successText, nextHistory);
-  const actions = el('div', 'jar-actions');
+  const actions = el('div', 'jar-actions jar-main-actions');
   const library = button('Character library', () => { void navigate({ kind: 'drawer_tab', id: 'characters' }); }, 'jar-link');
   const retry = button('I checked my library — retry', () => { uncertainSources.delete(sourceKey()); uncertain = false; message('Ready to retry. Choose Import to continue.'); updateControls(); }, 'jar-link'); retry.hidden = true;
   const importButton = button('Import to Lumiverse', () => { void runImport(); }, 'jar-button jar-primary');
@@ -213,7 +213,11 @@ export function setup(ctx: SpindleFrontendContext) {
     connectionPanel.hidden = guideVisible || mode !== 'archive';
     eyebrow.hidden = guideVisible; heading.hidden = guideVisible; intro.hidden = guideVisible;
     archivePanel.hidden = guideVisible || mode !== 'archive'; filePanel.hidden = guideVisible || mode !== 'file'; historyPanel.hidden = guideVisible || mode !== 'history';
-    actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile); status.hidden = guideVisible || mode === 'history' || !status.textContent;
+    actions.hidden = guideVisible || mode === 'history' || !(selected || chosenFile);
+    // With a card preview, the import buttons sit at its end and stay pinned only while it is on screen.
+    if (mode === 'archive' && selected) { if (actions.parentElement !== preview) preview.append(actions); }
+    else if (actions.parentElement === preview) success.after(actions);
+    status.hidden = guideVisible || mode === 'history' || !status.textContent;
     preview.hidden = guideVisible || mode === 'history' || !selected;
     cleanup.setBusy(busy); cleanupToggle.disabled = busy; cleanupToggle.textContent = cleanup.open ? 'Done cleaning up' : 'Clean up JAR…';
     lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !(selected || hiddenRecordId);

@@ -327,6 +327,20 @@ describe('lorebook panel', () => {
     expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-callout')!.hidden).toBe(true);
   });
 
+  test('expanded books stay open through redraws, and entries are only built when a book is opened', async () => {
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) } : undefined);
+    p.ui.show('123-abc'); await settle();
+    const first = () => p.ui.root.querySelector<HTMLDetailsElement>('details.jar-lorebook')!;
+    expect(first().querySelectorAll('.jar-lorebook-entry')).toHaveLength(0);
+    { const book = first(); const Toggle = book.ownerDocument.defaultView!.Event; book.open = true; book.dispatchEvent(new Toggle("toggle")); }
+    expect(first().querySelectorAll('.jar-lorebook-entry')).toHaveLength(2);
+    p.button('Capture again…')!.click(); await settle();
+    const words = p.ui.root.querySelector<HTMLTextAreaElement>('.jar-lorebook-trigger textarea')!;
+    words.value = 'Eclipse'; words.dispatchEvent(new words.ownerDocument.defaultView!.Event('input'));
+    p.button('Cancel')!.click(); p.ui.setBusy(true); p.ui.setBusy(false);
+    expect(first().open).toBe(true); expect(first().querySelectorAll('.jar-lorebook-entry')).toHaveLength(2);
+  });
+
   test('a public book can still be imported on its own before the card', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;

@@ -72,6 +72,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   banner.append(bannerRows, bannerGo);
   /** Characters a book was attached to, by book key. */
   const attachedTo = new Map<string, string>();
+  /** Expanded books and entries, by key. */
+  const openKeys = new Set<string>();
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
@@ -102,13 +104,13 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const wordsLabel = el('label', 'jar-field');
   const words = el('textarea', 'jar-input'); words.rows = 3; words.maxLength = MAX_TRIGGER_TEXT;
   words.placeholder = 'Names, places, factions or other words likely to trigger hidden entries';
-  words.addEventListener('input', () => render());
+  words.addEventListener('input', () => updateConfirm());
   wordsLabel.append(el('span', 'jar-help', 'Your words (optional), added to the trigger message'), words);
   const sources = el('details', 'jar-lorebook-sources'); sources.append(el('summary', '', 'Also include'));
   const sourceInputs = {} as Record<TriggerSource, HTMLInputElement>;
   for (const source of loreTriggerSources) {
     const label = el('label', 'jar-checkbox'); const input = el('input'); input.type = 'checkbox'; input.checked = defaultLoreTrigger[source];
-    input.addEventListener('change', () => render());
+    input.addEventListener('change', () => updateConfirm());
     label.append(input, el('span', '', sourceLabels[source])); sources.append(label); sourceInputs[source] = input;
   }
   trigger.append(wordsLabel, sources);
@@ -190,9 +192,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     confirm.hidden = !confirming;
     if (confirming) { confirmMessage.textContent = (hiddenCard && confirming === 'capture' ? 'JAR also recovers the hidden character definition from this chat. ' : '') + confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
     trigger.hidden = confirming !== 'capture';
-    const choice = triggerChoice(), empty = !choice.customText && !loreTriggerSources.some(source => choice[source]);
     words.disabled = locked; for (const source of loreTriggerSources) sourceInputs[source].disabled = locked;
-    confirmYes.disabled = locked || (confirming === 'capture' && empty); confirmNo.disabled = locked;
+    updateConfirm(); confirmNo.disabled = locked;
     waitRow.hidden = !waiting; stop.disabled = !waiting;
     root.setAttribute('aria-busy', String(busy));
   }
@@ -239,22 +240,41 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     notice.dataset.tone = waitingRebuild ? 'warning' : 'info';
   }
 
+  function updateConfirm() {
+    const choice = triggerChoice(), empty = !choice.customText && !loreTriggerSources.some(source => choice[source]);
+    confirmYes.disabled = busy || outerBusy || loading || (confirming === 'capture' && empty);
+  }
+
+  /** Redraws keep what the user expanded; the list is rebuilt whenever a state changes. */
+  function keepOpen(node: HTMLDetailsElement, key: string, onOpen?: () => void) {
+    node.open = openKeys.has(key);
+    if (node.open) onOpen?.();
+    node.addEventListener('toggle', () => { if (node.open) { openKeys.add(key); onOpen?.(); } else openKeys.delete(key); });
+  }
+
   function renderBook(book: JarLorebook, locked: boolean) {
     const card = el('details', book.kind === 'rebuilt' ? 'jar-lorebook jar-lorebook-rebuilt' : 'jar-lorebook');
+    const key = bookKey(book);
     const done = imported.get(bookKey(book)), unsure = uncertain.has(bookKey(book));
     const label = book.kind === 'rebuilt' ? `Rebuilt${book.model ? ` · ${book.model}` : ''}` : 'Public';
     card.append(el('summary', '', `${book.title} · ${book.entries.length} entr${book.entries.length === 1 ? 'y' : 'ies'} · ${label}`));
     if (book.description) card.append(el('p', 'jar-help', book.description));
+    // Entries are only built once the book is opened.
     const list = el('div', 'jar-lorebook-entries');
-    for (const entry of book.entries.slice(0, MAX_PREVIEW_ENTRIES)) {
-      const row = el('details', 'jar-lorebook-entry');
-      const words = keys(entry.key);
-      row.append(el('summary', '', `${typeof entry.comment === 'string' && entry.comment.trim() ? entry.comment.trim() : 'Untitled entry'}${entry.constant === true ? ' · always active' : ''}`),
-        el('p', 'jar-lorebook-keys', words.length ? `Keywords: ${words.join(', ')}` : 'No keywords'), el('p', '', String(entry.content)));
-      list.append(row);
-    }
-    if (book.entries.length > MAX_PREVIEW_ENTRIES) list.append(el('p', 'jar-help', `Showing the first ${MAX_PREVIEW_ENTRIES} entries. All ${book.entries.length} will be imported.`));
+    const fill = () => {
+      if (list.childElementCount) return;
+      book.entries.slice(0, MAX_PREVIEW_ENTRIES).forEach((entry, index) => {
+        const row = el('details', 'jar-lorebook-entry');
+        const words = keys(entry.key);
+        row.append(el('summary', '', `${typeof entry.comment === 'string' && entry.comment.trim() ? entry.comment.trim() : 'Untitled entry'}${entry.constant === true ? ' · always active' : ''}`),
+          el('p', 'jar-lorebook-keys', words.length ? `Keywords: ${words.join(', ')}` : 'No keywords'), el('p', '', String(entry.content)));
+        keepOpen(row, `${key}:${index}`);
+        list.append(row);
+      });
+      if (book.entries.length > MAX_PREVIEW_ENTRIES) list.append(el('p', 'jar-help', `Showing the first ${MAX_PREVIEW_ENTRIES} entries. All ${book.entries.length} will be imported.`));
+    };
     card.append(list);
+    keepOpen(card, key, fill);
     if (book.kind === 'rebuilt') card.append(el('p', 'jar-help', 'Keywords were inferred by an LLM. Very general keywords can make an entry trigger too often; edit them in Lumiverse’s World Info after import.'));
     const row = el('div', 'jar-actions jar-lorebook-actions');
     const attach = el('label', 'jar-checkbox'); const attachInput = el('input'); attachInput.type = 'checkbox'; const target = attachTarget(); attachInput.checked = !!target;
@@ -384,7 +404,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
-      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
