@@ -5,6 +5,7 @@ import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarL
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
 import { parseJanitorLink } from './janitor-link';
 import { createOwnerBinding, isPinnedOwner } from './owner-binding';
+import { createLinkIndex } from './link-index';
 
 type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
 const requestChannel = 'jar_bridge:request';
@@ -35,9 +36,9 @@ function availableCard(record: unknown): JarCardResult | undefined {
 export function setupJarBackend(api: SpindleAPI): () => void {
   const jobs = new Map<string, Job>();
   const binding = createOwnerBinding(api);
-  // Reuse only records already verified by this account and frontend document.
-  // JAR's list omits source IDs; never scan unrelated records to find a match.
-  const knownCards = new Map<string, string>();
+  // The JAR record remembered for each character link, reused after checking it
+  // still holds that link. JAR's list omits source IDs; unrelated records are never read.
+  const linkIndex = createLinkIndex(api);
   // Earlier JAR record holding a closed-lorebook capture for a previewed record.
   const captureTargets = new Map<string, string>();
   let disposed = false;
@@ -103,9 +104,11 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           if (!current()) throw new Error('Request cancelled.');
           return get(route);
         };
-        const rememberCard = (record: Record<string, unknown>, card: JarCardResult | undefined): void => {
+        // Remember the record used for a link, so later previews reuse it instead of
+        // asking JAR to inspect the link again (each inspection is a new JAR record).
+        const remember = async (record: Record<string, unknown>): Promise<void> => {
           const url = characterUrl(record);
-          if (card && url) knownCards.set(`${owner}\0${baseUrl}\0${url}`, card.recordId);
+          if (url && isRecordId(record.id)) await linkIndex.set(`${baseUrl}\0${url}`, record.id);
         };
         let result: NonNullable<JarResponse['result']>;
         if (command === 'preview-link') {
@@ -115,16 +118,16 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           let record: Record<string, unknown> | undefined;
           let card: JarCardResult | undefined;
           if (link.kind === 'character') {
-            const cacheKey = `${owner}\0${baseUrl}\0${link.sourceUrl}`;
-            const cachedId = knownCards.get(cacheKey);
+            const cacheKey = `${baseUrl}\0${link.sourceUrl}`;
+            const cachedId = await linkIndex.get(cacheKey);
             if (cachedId) {
-              const candidate = object(await ownedGet({ kind: 'card', recordId: cachedId }));
+              // A record deleted in JAR, or one now holding another character, is forgotten.
+              let candidate: Record<string, unknown> = {};
+              try { candidate = object(await ownedGet({ kind: 'card', recordId: cachedId })); }
+              catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; }
               if (!current()) return;
-              if (candidate.id === cachedId && characterUrl(candidate) === link.sourceUrl) {
-                card = availableCard(candidate);
-                if (card) record = candidate;
-              }
-              if (!record) knownCards.delete(cacheKey);
+              if (candidate.id === cachedId && characterUrl(candidate) === link.sourceUrl) { record = candidate; card = availableCard(candidate); }
+              else await linkIndex.delete(cacheKey);
             }
             if (!record) {
               const inspected = object(await ownedGet({ kind: 'inspect', sourceUrl: link.sourceUrl }));
@@ -153,7 +156,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               } catch { /* keep the hidden-card result */ }
               if (!current()) return;
             }
-            rememberCard(record, card);
+            await remember(record);
+            if (!current()) return;
             result = { kind: 'character', sourceUrl: link.sourceUrl, recordId: record.id as string, characterUrl: link.sourceUrl,
               ...(card ? { card } : { hiddenCard: true, warning: 'This character’s creator hides its definition, so the link preview has only its public details. JAR can recover it with a capture below, or use a downloaded card file.' }) } satisfies JarLinkResult;
           } else {
@@ -168,7 +172,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (!current()) return;
             const history = toHistory(record, linkage.chatId, exported);
             card = availableCard(record);
-            rememberCard(record, card);
+            if (card) await remember(record);
             const url = characterUrl(record);
             result = { kind: 'chat', sourceUrl: link.sourceUrl, recordId: linked.id, history,
               ...(url ? { characterUrl: url } : {}), ...(card ? { card } : {
@@ -199,6 +203,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               const earlier = toLorebooks(older);
               if (!hasCapture(earlier)) continue;
               captureTargets.set(targetKey, item.id);
+              // The capture record also holds the public details: preview it next time.
+              await remember(older);
               return { lorebooks: mergeEarlierCapture(fresh, earlier, earlier.capturedAt || item.ts), target: item.id };
             }
             captureTargets.delete(targetKey);
@@ -234,7 +240,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             result = toHistory(record, linkage.chatId, exported);
           } else {
             const card = exportCard(record);
-            rememberCard(record, card);
+            await remember(record);
             result = card;
           }
         } else {
@@ -262,7 +268,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   });
   // cors has no cancellation signal: ignore in-flight results after cancellation
   // and prevent any remaining request in a sequence from starting.
-  return () => { disposed = true; off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); knownCards.clear(); captureTargets.clear(); };
+  return () => { disposed = true; off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
 }
 
 declare const spindle: SpindleAPI;

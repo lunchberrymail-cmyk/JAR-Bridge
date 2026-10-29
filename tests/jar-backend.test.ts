@@ -13,14 +13,15 @@ const record = (id = '123-abc') => ({
   character: { name: 'A <b>character</b>', description: '  Exact {{char}} definition\n\n', personality: 'Careful', scenario: 'A place', firstMessage: 'Hello {{user}}', alternateGreetings: ['Alternative one', '', '  Alternative two  '], exampleMessages: '<START>\n{{char}}: Example', creatorNotes: 'Creator note', tags: ['tag one', 'tag two'], avatarBase64: 'data:image/png;base64,iVBORw0KGgo=', definitionSource: 'public' },
 });
 function response(body: unknown, status = 200) { return { status, headers: { 'content-type': 'application/json; charset=utf-8' }, body: JSON.stringify(body) }; }
-function fixture(options: { pin?: unknown; granted?: () => Promise<string[]>; cors?: (url: string, options: unknown) => Promise<unknown>; capabilities?: Record<string, number> } = {}) {
+function fixture(options: { pin?: unknown; granted?: () => Promise<string[]>; cors?: (url: string, options: unknown) => Promise<unknown>; capabilities?: Record<string, number>; files?: Map<string, string> } = {}) {
+  const files = options.files ?? new Map<string, string>();
   let handler: (payload: unknown, userId: string, frontendSessionId?: string) => void = () => {};
   let unsubscribed = false;
   const calls: { url: string; options: any }[] = [];
   const replies: { payload: any; userId: string; options: any }[] = [];
   const api: any = {
     host: { extensionInstallationId: 'installed-one', capabilities: options.capabilities ?? { 'frontend-session-routing-v1': 1 } },
-    storage: { read: async (path: string) => { expect(path).toBe('installation.json'); return JSON.stringify(options.pin === undefined ? { schemaVersion: 1, ownerUserId: 'owner', installationId: 'installed-one' } : options.pin); } },
+    storage: { write: async (path: string, data: string) => { expect(path).toBe('jar-links.json'); files.set(path, data); }, read: async (path: string) => { if (path === 'jar-links.json') { if (!files.has(path)) throw new Error('missing'); return files.get(path)!; } expect(path).toBe('installation.json'); return JSON.stringify(options.pin === undefined ? { schemaVersion: 1, ownerUserId: 'owner', installationId: 'installed-one' } : options.pin); } },
     permissions: { getGranted: options.granted ?? (async () => ['cors_proxy']) },
     cors: async (url: string, request: unknown) => { calls.push({ url, options: request }); return options.cors ? options.cors(url, request) : response(url.endsWith('/api/version') ? { version: '0.4.0' } : url.endsWith('/api/captures') ? [{ id: '123-abc', characterName: 'Test', source: 'inspect', ts: 10, preview: 'PRIVATE_PROMPT' }] : record()); },
     onFrontendMessage: (fn: typeof handler) => { handler = fn; return () => { unsubscribed = true; }; },
@@ -487,22 +488,34 @@ describe('explicit pasted JanitorAI links', () => {
       else expect(result.history).toBeUndefined();
     }
   });
-  test('reuses only a complete previously verified record in the same account, document and JAR address', async () => {
-    const f = fixture({ cors: async url => directResponse(url) });
-    f.send({ id: 'first-link', command: 'preview-link', sourceUrl: characterLink }); await wait();
-    f.send({ id: 'repeat-link', command: 'preview-link', sourceUrl: characterLink }); await wait();
+  test('reuses the JAR record remembered for a link across documents and restarts, per JAR address', async () => {
+    const files = new Map<string, string>();
+    const f = fixture({ cors: async url => directResponse(url), files });
+    f.send({ id: 'first-link', command: 'preview-link', sourceUrl: characterLink }); await wait(); await wait();
+    f.send({ id: 'repeat-link', command: 'preview-link', sourceUrl: characterLink }, 'owner', 'tab-two'); await wait(); await wait();
     expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/captures/123-abc']);
-    f.send({ id: 'other-document', command: 'preview-link', sourceUrl: characterLink }, 'owner', 'tab-two'); await wait();
-    expect(f.calls.at(-2)!.url).toEndWith('/api/inspect');
-    f.send({ id: 'other-address', command: 'preview-link', sourceUrl: characterLink, baseUrl: 'http://localhost:4580' }); await wait();
+    f.send({ id: 'other-address', command: 'preview-link', sourceUrl: characterLink, baseUrl: 'http://localhost:4580' }); await wait(); await wait();
     expect(f.calls.at(-2)!.url).toBe('http://127.0.0.1:4580/api/inspect');
+    const restarted = fixture({ cors: async url => directResponse(url), files });
+    restarted.send({ id: 'after-restart', command: 'preview-link', sourceUrl: characterLink }); await wait(); await wait();
+    expect(restarted.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/captures/123-abc']);
+    expect(restarted.replies[0].payload.result.card).toBeDefined();
   });
-  test('does not reuse a pending record; a hidden card offers capture and reads only same-named records', async () => {
+  test('a remembered record deleted in JAR is forgotten and the link inspected again', async () => {
+    const files = new Map([['jar-links.json', JSON.stringify({ schemaVersion: 1, links: { [`http://127.0.0.1:4577${String.fromCharCode(0)}${characterLink}`]: 'gone-1' } })]]);
+    const f = fixture({ files, cors: async url => url.endsWith('/gone-1') ? response({ error: 'not found' }, 404) : directResponse(url) });
+    f.send({ id: 'deleted', command: 'preview-link', sourceUrl: characterLink }); for (let i = 0; i < 3; i++) await wait();
+    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/captures/gone-1', '/api/inspect', '/api/captures/123-abc']);
+    expect(f.replies[0].payload.result.card).toBeDefined();
+    expect(JSON.parse(files.get('jar-links.json')!).links).toEqual({ [`http://127.0.0.1:4577${String.fromCharCode(0)}${characterLink}`]: '123-abc' });
+  });
+  test('reuses a pending record; a hidden card offers capture and reads only same-named records', async () => {
     const pending = { ...directRecord(), character: { name: 'Pending', definitionSource: 'pending' } };
     const list = [{ id: '123-abc', characterName: 'Stored name', ts: 3 }, { id: 'other-1', characterName: 'Someone else', ts: 2 }];
     const f = fixture({ cors: async url => url.endsWith('/api/captures') ? response(list) : url.includes('/api/captures/') ? response(pending) : directResponse(url) });
     for (const id of ['pending-one', 'pending-two']) { f.send({ id, command: 'preview-link', sourceUrl: characterLink }); await wait(); await wait(); }
-    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/captures', '/api/inspect', '/api/captures/123-abc', '/api/captures']);
+    // The second preview reuses the remembered record instead of a new inspection.
+    expect(f.calls.map(call => new URL(call.url).pathname)).toEqual(['/api/inspect', '/api/captures/123-abc', '/api/captures', '/api/captures/123-abc', '/api/captures']);
     expect(f.replies.map(reply => reply.payload.result.hiddenCard)).toEqual([true, true]);
   });
   test('a hidden card recovered by an earlier capture of the same link is previewed from that record', async () => {
