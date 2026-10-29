@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createOwnerBinding } from '../src/owner-binding';
+import { createOwnerBinding, hasJarAccess } from '../src/owner-binding';
 import { createJarClient } from '../src/client';
 import { setupJarBackend } from '../src/backend';
 
@@ -9,7 +9,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const installationId = 'a5ae62cd-418c-45da-9607-f552beef3c6c';
 const pin = (ownerUserId = 'alice', id = installationId) => JSON.stringify({ schemaVersion: 1, ownerUserId, installationId: id });
 
-function harness(options: { stored?: string; personal?: boolean; proofTtlMs?: number } = {}) {
+function harness(options: { stored?: string; personal?: boolean; operatorRoles?: Record<string, string>; proofTtlMs?: number } = {}) {
   const storage = new Map<string, string>(); if (options.stored !== undefined) storage.set('installation.json', options.stored);
   const sent: { payload: any; userId?: string; options?: { frontendSessionId?: string } }[] = [];
   const writes: string[] = [], roleArguments: unknown[][] = [];
@@ -20,7 +20,14 @@ function harness(options: { stored?: string; personal?: boolean; proofTtlMs?: nu
       exists: async (path: string) => storage.has(path),
       write: async (path: string, value: string) => { writes.push(value); storage.set(path, value); },
     },
-    users: { getRole: async (...args: unknown[]) => { roleArguments.push(args); if (options.personal === false) throw new Error('userId is required for operator-scoped extensions'); return 'user'; } },
+    users: { getRole: async (...args: unknown[]) => {
+      roleArguments.push(args);
+      if (options.personal !== false) return 'user';
+      if (!args.length) throw new Error('userId is required for operator-scoped extensions');
+      const role = options.operatorRoles?.[String(args[0])];
+      if (!role) throw new Error('User not found');
+      return role;
+    } },
     sendToFrontend: (payload: unknown, userId?: string, delivery?: { frontendSessionId?: string }) => sent.push({ payload, userId, options: delivery }),
   };
   const binding = createOwnerBinding(api, { proofTtlMs: options.proofTtlMs ?? 100 }); cleanups.push(() => binding.dispose());
@@ -33,7 +40,7 @@ describe('personal installation ownership bootstrap', () => {
   test('preserves an exact existing installation/account pin without a challenge or write', async () => {
     const h = harness({ stored: pin() });
     expect(await h.binding.ensure(h.request())).toBe(true);
-    expect(h.roleArguments).toEqual([]); expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
+    expect(h.roleArguments).toEqual([[]]); expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
     expect(await h.binding.ensure(h.request({ userId: 'another-admin' }))).toBe(false);
     expect(h.writes).toEqual([]);
   });
@@ -42,7 +49,7 @@ describe('personal installation ownership bootstrap', () => {
     for (const stored of [pin('another-user'), pin('another-user', 'different-installation'), '{}', 'bad-json', 'x'.repeat(4097)]) {
       const h = harness({ stored });
       expect(await h.binding.ensure(h.request())).toBe(false);
-      expect(h.sent).toEqual([]); expect(h.writes).toEqual([]); expect(h.roleArguments).toEqual([]);
+      expect(h.sent).toEqual([]); expect(h.writes).toEqual([]); expect(h.roleArguments).toEqual([[]]);
       expect(h.storage.get('installation.json')).toBe(stored);
     }
     const unreadable = harness({ stored: pin() }); unreadable.api.storage.read = async () => { throw new Error('Access failed'); };
@@ -57,7 +64,7 @@ describe('personal installation ownership bootstrap', () => {
     h.acknowledge(h.sent[0].payload, 'alice', 'another-document'); await tick(); expect(h.writes).toEqual([]);
     h.acknowledge(h.sent[0].payload); expect(await result).toBe(true);
     expect(h.storage.get('installation.json')).toBe(pin());
-    // Without the proof, or on an operator installation, nothing changes.
+    // Without the proof, or without a native account, nothing changes.
     const unproved = harness({ stored: stale, proofTtlMs: 5 });
     expect(await unproved.binding.ensure(unproved.request())).toBe(false); expect(unproved.storage.get('installation.json')).toBe(stale);
     const operator = harness({ stored: stale, personal: false });
@@ -85,10 +92,10 @@ describe('personal installation ownership bootstrap', () => {
     expect(h.sent).toHaveLength(1);
   });
 
-  test('operator installations fail the native scope proof, without supplying a caller-controlled user ID', async () => {
+  test('operator installations reject an account the native host cannot verify', async () => {
     const h = harness({ personal: false });
     expect(await h.binding.ensure(h.request())).toBe(false);
-    expect(h.roleArguments).toEqual([[]]); expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
+    expect(h.roleArguments).toEqual([[], ['alice']]); expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
   });
 
   test('missing scope, storage or targeted-delivery APIs fail closed', async () => {
@@ -139,6 +146,86 @@ describe('personal installation ownership bootstrap', () => {
     const h = harness(); const result = h.binding.ensure(h.request()); await tick();
     h.storage.set('installation.json', pin('someone-else')); h.acknowledge();
     expect(await result).toBe(false); expect(h.writes).toEqual([]); expect(h.storage.get('installation.json')).toBe(pin('someone-else'));
+  });
+});
+
+describe('shared Operator installations', () => {
+  test('owner, admin and ordinary users can connect without claiming or changing a personal pin', async () => {
+    for (const stored of [undefined, pin('someone-else'), 'bad-json']) {
+      const h = harness({ personal: false, stored, operatorRoles: { alice: 'operator', bob: 'admin', carol: 'user' } });
+      for (const userId of ['alice', 'bob', 'carol']) {
+        expect(await h.binding.ensure(h.request({ userId }))).toBe(true);
+        expect(await hasJarAccess(h.api, userId)).toBe(true);
+      }
+      expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
+      expect(h.storage.get('installation.json')).toBe(stored);
+    }
+  });
+
+  test('unrecognized roles, missing identity APIs and arbitrary native failures cannot enable shared mode', async () => {
+    const invalidRole = harness({ personal: false, operatorRoles: { alice: 'unknown' } });
+    expect(await invalidRole.binding.ensure(invalidRole.request())).toBe(false);
+    for (const stored of [undefined, pin()]) {
+      const h = harness({ stored });
+      h.api.users.getRole = async () => { throw new Error('Native host unavailable'); };
+      expect(await h.binding.ensure(h.request())).toBe(false);
+      expect(await hasJarAccess(h.api, 'alice')).toBe(false);
+      expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
+      delete h.api.users;
+      expect(await h.binding.ensure(h.request())).toBe(false);
+    }
+  });
+
+  test('removing an account revokes access even after an earlier successful request', async () => {
+    const operatorRoles: Record<string, string> = { alice: 'user' };
+    const h = harness({ personal: false, operatorRoles });
+    expect(await h.binding.ensure(h.request())).toBe(true);
+    delete operatorRoles.alice;
+    expect(await hasJarAccess(h.api, 'alice')).toBe(false);
+    expect(await h.binding.ensure(h.request())).toBe(false);
+  });
+
+  test('cancellation during native account verification prevents access', async () => {
+    const h = harness({ personal: false }); let resolve!: (role: string) => void; let current = true;
+    h.api.users.getRole = (...args: unknown[]) => args.length
+      ? new Promise<string>(done => { resolve = done; })
+      : Promise.reject(new Error('userId is required for operator-scoped extensions'));
+    const pending = h.binding.ensure(h.request({ current: () => current })); await tick();
+    current = false; resolve('user');
+    expect(await pending).toBe(false); expect(h.sent).toEqual([]); expect(h.writes).toEqual([]);
+  });
+
+  test('two accounts sharing a document ID get only their own replies, and forged payload identity is ignored', async () => {
+    const h = harness({ personal: false, operatorRoles: { alice: 'operator', bob: 'user' } });
+    let receive!: (payload: unknown, userId?: string, sessionId?: string) => void;
+    const network: string[] = [];
+    h.api.onFrontendMessage = (callback: typeof receive) => { receive = callback; return () => {}; };
+    h.api.permissions = { getGranted: async () => ['cors_proxy'] };
+    h.api.cors = async (url: string) => { network.push(url); return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '0.4.0' }) }; };
+    cleanups.push(setupJarBackend(h.api));
+    for (const userId of ['alice', 'bob']) receive({ type: 'jar_bridge:request', id: `check-${userId}`, command: 'check', userId: 'forged', frontendSessionId: 'forged' }, userId, 'same-document');
+    await tick();
+    expect(network).toHaveLength(2);
+    expect(h.sent.map(item => ({ id: item.payload.id, user: item.userId, session: item.options?.frontendSessionId, result: item.payload.result }))).toEqual([
+      { id: 'check-alice', user: 'alice', session: 'same-document', result: { version: '0.4.0' } },
+      { id: 'check-bob', user: 'bob', session: 'same-document', result: { version: '0.4.0' } },
+    ]);
+    expect(h.writes).toEqual([]);
+    receive({ type: 'jar_bridge:request', id: 'forged-owner', command: 'check', userId: 'alice' }, 'unknown', 'same-document'); await tick();
+    expect(network).toHaveLength(2); expect(h.sent.at(-1)?.payload.error).toContain('account');
+  });
+
+  test('an account removed during a JAR read receives no archive data and starts no following read', async () => {
+    const operatorRoles: Record<string, string> = { alice: 'user' };
+    const h = harness({ personal: false, operatorRoles });
+    let receive!: (payload: unknown, userId?: string, sessionId?: string) => void; const network: string[] = [];
+    h.api.onFrontendMessage = (callback: typeof receive) => { receive = callback; return () => {}; };
+    h.api.permissions = { getGranted: async () => ['cors_proxy'] };
+    h.api.cors = async (url: string) => { network.push(url); delete operatorRoles.alice; return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '0.4.0' }) }; };
+    cleanups.push(setupJarBackend(h.api));
+    receive({ type: 'jar_bridge:request', id: 'removed', command: 'connect' }, 'alice', 'document-a'); await tick();
+    expect(network.map(url => new URL(url).pathname)).toEqual(['/api/version']);
+    expect(h.sent).toHaveLength(1); expect(h.sent[0].payload.result).toBeUndefined(); expect(h.sent[0].payload.error).toContain('account');
   });
 });
 

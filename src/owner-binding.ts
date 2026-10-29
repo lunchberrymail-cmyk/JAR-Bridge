@@ -28,16 +28,35 @@ async function pinState(api: SpindleAPI, userId: string): Promise<PinState> {
   } catch { return 'invalid'; }
 }
 
-export async function isPinnedOwner(api: SpindleAPI, userId: string): Promise<boolean> {
-  return await pinState(api, userId) === 'valid';
+const roles = new Set(['operator', 'admin', 'user']);
+
+/** Determine scope through the native host, never through frontend payloads. */
+async function nativeAccess(api: SpindleAPI, userId: string): Promise<'personal' | 'operator' | undefined> {
+  if (!userId || typeof api.users?.getRole !== 'function') return;
+  try {
+    // Only personal installations have an implicit account. Other RPC failures
+    // must not accidentally turn a personal installation into a shared bridge.
+    return roles.has(await api.users.getRole()) ? 'personal' : undefined;
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'userId is required for operator-scoped extensions') return;
+  }
+  try {
+    // userId comes from onFrontendMessage's authenticated host context. All
+    // signed-in roles can use an Operator installation's shared JAR session.
+    return roles.has(await api.users.getRole(userId)) ? 'operator' : undefined;
+  } catch { return; }
+}
+
+export async function hasJarAccess(api: SpindleAPI, userId: string): Promise<boolean> {
+  const access = await nativeAccess(api, userId);
+  return access === 'operator' || (access === 'personal' && await pinState(api, userId) === 'valid');
 }
 
 /**
- * Bootstrap only a personal installation, using two independent host properties:
- * users.getRole() without an ID rejects on operator installs; session-targeted
- * sends on personal installs are forced to the real owner. A random challenge
- * can therefore be acknowledged only by that owner's requesting document.
- * The frontend supplies no owner ID or installation ID that we trust here.
+ * Operator installations deliberately share the server's JAR session with
+ * authenticated Lumiverse users. Personal installations retain their account
+ * pin and exact-document challenge; native delivery is forced to their owner.
+ * Neither mode trusts an account or installation ID from a frontend payload.
  */
 export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: number } = {}) {
   const proofs = new Map<string, Proof>();
@@ -64,6 +83,10 @@ export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: numb
 
   async function ensure(request: Request): Promise<boolean> {
     const active = () => !disposed && request.current();
+    const access = await nativeAccess(api, request.userId);
+    if (!active() || !access) return false;
+    // There is no first-user claim or global account pin in shared mode.
+    if (access === 'operator') return true;
     const state = await pinState(api, request.userId);
     if (!active()) return false;
     if (state === 'valid') return true;
@@ -72,13 +95,6 @@ export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: numb
       || typeof api.sendToFrontend !== 'function' || typeof globalThis.crypto?.getRandomValues !== 'function'
       || !(api.host.capabilities['frontend-session-routing-v1'] >= 1)
       || typeof api.host.extensionInstallationId !== 'string' || !api.host.extensionInstallationId) return false;
-    try {
-      // Passing request.userId here would also work on operator installs and
-      // would not prove that host delivery/storage are constrained to an owner.
-      const role = await api.users.getRole();
-      if (!active() || !['operator', 'admin', 'user'].includes(role)) return false;
-    } catch { return false; }
-    if (!active()) return false;
     cancel(request.userId, request.sessionId);
     const bytes = new Uint8Array(32); crypto.getRandomValues(bytes);
     const nonce = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -97,7 +113,7 @@ export function createOwnerBinding(api: SpindleAPI, options: { proofTtlMs?: numb
     if (latest === 'valid') return true;
     try {
       await api.storage.write(PIN_FILE, JSON.stringify({ schemaVersion: 1, ownerUserId: request.userId, installationId: api.host.extensionInstallationId }));
-      return active() && await isPinnedOwner(api, request.userId);
+      return active() && await hasJarAccess(api, request.userId);
     } catch { return false; }
   }
 

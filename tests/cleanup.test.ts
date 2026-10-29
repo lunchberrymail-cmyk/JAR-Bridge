@@ -19,6 +19,7 @@ function fixture(cors: (url: string, request: any) => Promise<unknown>) {
   const api: any = {
     host: { extensionInstallationId: 'installed-one', capabilities: { 'frontend-session-routing-v1': 1 } },
     storage: { read: async () => JSON.stringify({ schemaVersion: 1, ownerUserId: 'owner', installationId: 'installed-one' }) },
+    users: { getRole: async () => 'user' },
     permissions: { getGranted: async () => ['cors_proxy'] },
     cors: async (url: string, request: any) => { calls.push({ url, options: request }); return cors(url, request); },
     characters: untouchable, chats: untouchable, world_books: untouchable,

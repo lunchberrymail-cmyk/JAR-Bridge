@@ -139,7 +139,7 @@ export function createJarClient(ctx: Context): {
         || typeof response.nonce !== 'string' || !/^[0-9a-f]{64}$/.test(response.nonce)) return;
       pending.ownerProofSent = true;
       try { ctx.sendToBackend({ type: 'jar_bridge:owner-proof', id: pending.id, command: pending.command, nonce: response.nonce }); }
-      catch { if (detach(pending)) pending.reject(new Error('Could not confirm this personal extension installation. Reopen the importer and try again.')); }
+      catch { if (detach(pending)) pending.reject(new Error('Could not confirm this extension installation. Reopen the importer and try again.')); }
       return;
     }
     if (!response || response.type !== 'jar_bridge:response' || response.id !== pending.id || response.command !== pending.command) return;

@@ -4,7 +4,7 @@ import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRou
 import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
 import { parseJanitorLink } from './janitor-link';
-import { createOwnerBinding, isPinnedOwner } from './owner-binding';
+import { createOwnerBinding, hasJarAccess } from './owner-binding';
 import { createLinkIndex } from './link-index';
 
 type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
@@ -71,7 +71,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
     void (async () => {
       try {
         if (!await binding.ensure({ userId, sessionId: frontendSessionId, id, command, current })) {
-          if (current()) reply({ error: 'Install JAR Bridge for your personal Lumiverse account, then reopen the importer and retry. An existing account binding cannot be replaced.' });
+          if (current()) reply({ error: 'JAR Bridge could not verify access for your Lumiverse account. Reopen the importer and retry. Personal installations can only be used by their owning account.' });
           return;
         }
         if (!current()) return;
@@ -89,6 +89,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           if (!current()) return;
           if (!character || character.id !== request.characterId) throw new Error('This character is no longer in your library. The lorebook was imported but not attached.');
           const ids = [...new Set([...(Array.isArray(character.world_book_ids) ? character.world_book_ids : []), request.worldBookId])];
+          if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
+          if (!current()) return;
           const updated = await api.characters.update(request.characterId, { world_book_ids: ids }, userId);
           if (!current()) return;
           const worldBookIds = Array.isArray(updated?.world_book_ids) ? updated.world_book_ids.filter(id => typeof id === 'string') : [];
@@ -98,11 +100,11 @@ export function setupJarBackend(api: SpindleAPI): () => void {
         }
         if (request.baseUrl !== undefined && typeof request.baseUrl !== 'string') throw new Error('Enter a local JAR address.');
         const baseUrl = normalizeJarBase(request.baseUrl as string | undefined);
-        const get = createJarTransport(api, baseUrl, { current });
-        const ownedGet = async (route: JarRoute): Promise<unknown> => {
-          if (!await isPinnedOwner(api, userId)) throw new Error('This JAR bridge is no longer linked to your Lumiverse account.');
+        const transport = createJarTransport(api, baseUrl, { current });
+        const get = async (route: JarRoute): Promise<unknown> => {
+          if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
           if (!current()) throw new Error('Request cancelled.');
-          return get(route);
+          return transport(route);
         };
         // Remember the record used for a link, so later previews reuse it instead of
         // asking JAR to inspect the link again (each inspection is a new JAR record).
@@ -124,17 +126,17 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               // A record deleted in JAR, or one now holding another character, is forgotten.
               // A failed read keeps the entry: inspecting again replaces it if the record is gone.
               let candidate: Record<string, unknown> | undefined;
-              try { candidate = object(await ownedGet({ kind: 'card', recordId: cachedId })); }
-              catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; }
+              try { candidate = object(await get({ kind: 'card', recordId: cachedId })); }
+              catch (error) { if (!current() || !await hasJarAccess(api, userId)) throw error; }
               if (!current()) return;
               if (candidate?.id === cachedId && characterUrl(candidate) === link.sourceUrl) { record = candidate; card = availableCard(candidate); }
               else if (candidate) await linkIndex.delete(cacheKey);
             }
             if (!record) {
-              const inspected = object(await ownedGet({ kind: 'inspect', sourceUrl: link.sourceUrl }));
+              const inspected = object(await get({ kind: 'inspect', sourceUrl: link.sourceUrl }));
               if (!current()) return;
               if (!isRecordId(inspected.id)) throw new Error('JAR returned an invalid character record for this link.');
-              record = object(await ownedGet({ kind: 'card', recordId: inspected.id }));
+              record = object(await get({ kind: 'card', recordId: inspected.id }));
               if (!current()) return;
               if (record.id !== inspected.id || characterUrl(record) !== link.sourceUrl) throw new Error('JAR returned a different character for this link. Nothing was imported.');
               card = availableCard(record);
@@ -146,10 +148,10 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               // used. The lookup is best-effort: on failure the capture step is offered.
               const name = typeof record.characterName === 'string' ? record.characterName : '';
               try {
-                const summaries = name ? normalizeSummaries(await ownedGet({ kind: 'captures' })) : [];
+                const summaries = name ? normalizeSummaries(await get({ kind: 'captures' })) : [];
                 for (const item of summaries.filter(item => item.id !== record!.id && item.name === name).sort((a, b) => b.ts - a.ts).slice(0, 5)) {
                   if (!current()) return;
-                  const older = object(await ownedGet({ kind: 'card', recordId: item.id }));
+                  const older = object(await get({ kind: 'card', recordId: item.id }));
                   if (older.id !== item.id || characterUrl(older) !== link.sourceUrl) continue;
                   const recovered = availableCard(older);
                   if (recovered) { record = older; card = recovered; break; }
@@ -162,14 +164,14 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             result = { kind: 'character', sourceUrl: link.sourceUrl, recordId: record.id as string, characterUrl: link.sourceUrl,
               ...(card ? { card } : { hiddenCard: true, warning: 'This character’s creator hides its definition, so the link preview has only its public details. JAR can recover it with a capture below, or use a downloaded card file.' }) } satisfies JarLinkResult;
           } else {
-            const linked = object(await ownedGet({ kind: 'link-chat', sourceUrl: link.sourceUrl }));
+            const linked = object(await get({ kind: 'link-chat', sourceUrl: link.sourceUrl }));
             if (!current()) return;
             if (!isRecordId(linked.id) || object(linked.conversation).chatId !== link.chatId) throw new Error('JAR returned a different conversation for this link. Nothing was imported.');
-            record = object(await ownedGet({ kind: 'card', recordId: linked.id }));
+            record = object(await get({ kind: 'card', recordId: linked.id }));
             if (!current()) return;
             if (record.id !== linked.id) throw new Error('JAR returned a different character record for this link. Nothing was imported.');
             const linkage = assertLinkedConversation(record, link.chatId);
-            const exported = await ownedGet({ kind: 'history', chatId: linkage.chatId });
+            const exported = await get({ kind: 'history', chatId: linkage.chatId });
             if (!current()) return;
             const history = toHistory(record, linkage.chatId, exported);
             card = availableCard(record);
@@ -186,7 +188,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           const hasCapture = (books: JarLorebooksResult) => books.captured || books.books.some(book => book.kind === 'rebuilt');
           // Returns the lorebook view and the JAR record capture/rebuild act on.
           const read = async (): Promise<{ lorebooks: JarLorebooksResult; target: string }> => {
-            const record = object(await ownedGet({ kind: 'card', recordId }));
+            const record = object(await get({ kind: 'card', recordId }));
             if (record.id !== recordId) throw new Error('JAR returned a different character. Preview the link again.');
             const fresh = toLorebooks(record);
             const characterId = characterIdOf(record);
@@ -194,12 +196,12 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             // Only same-named records are read, and only one with the same
             // JanitorAI character ID is used.
             const cached = captureTargets.get(targetKey);
-            const summaries = normalizeSummaries(await ownedGet({ kind: 'captures' }));
+            const summaries = normalizeSummaries(await get({ kind: 'captures' }));
             const candidates = summaries.filter(item => item.id !== recordId && item.name === fresh.characterName)
               .sort((a, b) => Number(b.id === cached) - Number(a.id === cached) || b.ts - a.ts).slice(0, 5);
             for (const item of candidates) {
               if (!current()) break;
-              const older = object(await ownedGet({ kind: 'card', recordId: item.id }));
+              const older = object(await get({ kind: 'card', recordId: item.id }));
               if (older.id !== item.id || characterIdOf(older) !== characterId) continue;
               const earlier = toLorebooks(older);
               if (!hasCapture(earlier)) continue;
@@ -220,7 +222,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (command === 'capture-lorebook' && !before.allowProxy) throw new Error('This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook. Its public lorebooks can still be imported.');
             if (command === 'rebuild-lorebook' && !before.captured) throw new Error('Capture the closed lorebook in JAR first, then rebuild it.');
             let state: JarLorebookAction['state'] = 'done';
-            try { await ownedGet(command === 'capture-lorebook' ? { kind: 'capture', recordId: target, force: request.force === true, ...(request.trigger !== undefined ? { trigger: loreTrigger(request.trigger) } : {}) } : { kind: 'rebuild', recordId: target }); }
+            try { await get(command === 'capture-lorebook' ? { kind: 'capture', recordId: target, force: request.force === true, ...(request.trigger !== undefined ? { trigger: loreTrigger(request.trigger) } : {}) } : { kind: 'rebuild', recordId: target }); }
             catch (error) { if (!(error instanceof JarStillRunningError)) throw error; state = 'running'; }
             if (!current()) return;
             result = { state, lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;
@@ -232,8 +234,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           for (const id of ids) {
             if (!current()) return;
             let record: Record<string, unknown>;
-            try { record = object(await ownedGet({ kind: 'card', recordId: id })); }
-            catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; continue; }
+            try { record = object(await get({ kind: 'card', recordId: id })); }
+            catch (error) { if (!current() || !await hasJarAccess(api, userId)) throw error; continue; }
             if (record.id !== id) continue;
             records.push({ id, characterId: characterIdOf(record), conversations: Array.isArray(record.conversations) ? record.conversations.length : 0,
               captured: !!record.payload || typeof record.capturedAt === 'number' || !!record.privateLorebookReconstruction });
@@ -247,8 +249,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           const deleted: string[] = [], failed: string[] = [];
           for (const id of ids) {
             if (!current()) return;
-            try { (object(await ownedGet({ kind: 'delete', recordId: id })).ok === true ? deleted : failed).push(id); }
-            catch (error) { if (!current() || !await isPinnedOwner(api, userId)) throw error; failed.push(id); }
+            try { (object(await get({ kind: 'delete', recordId: id })).ok === true ? deleted : failed).push(id); }
+            catch (error) { if (!current() || !await hasJarAccess(api, userId)) throw error; failed.push(id); }
           }
           for (const [key, target] of captureTargets) if (deleted.includes(target)) captureTargets.delete(key);
           result = { deleted, failed } satisfies JarDeleteResult;
@@ -261,7 +263,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           if (command === 'conversations') result = toConversations(record);
           else if (command === 'history') {
             const linkage = assertLinkedConversation(record, request.chatId);
-            if (!await isPinnedOwner(api, userId)) throw new Error('This JAR bridge is no longer linked to your Lumiverse account.');
+            if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
             if (!current()) return;
             const exported = await get({ kind: 'history', chatId: linkage.chatId });
             if (!current()) return;
@@ -284,7 +286,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           }
         }
         if (!current()) return;
-        if (!await isPinnedOwner(api, userId)) throw new Error('This JAR bridge is no longer linked to your Lumiverse account.');
+        if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
         if (current()) reply({ result });
       } catch (error) {
         if (current()) reply({ error: error instanceof Error ? error.message : 'JAR could not complete this request.' });

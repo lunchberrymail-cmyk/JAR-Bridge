@@ -22,6 +22,7 @@ function fixture(options: { pin?: unknown; granted?: () => Promise<string[]>; co
   const api: any = {
     host: { extensionInstallationId: 'installed-one', capabilities: options.capabilities ?? { 'frontend-session-routing-v1': 1 } },
     storage: { write: async (path: string, data: string) => { expect(path).toBe('jar-links.json'); files.set(path, data); }, read: async (path: string) => { if (path === 'jar-links.json') { if (!files.has(path)) throw new Error('missing'); return files.get(path)!; } expect(path).toBe('installation.json'); return JSON.stringify(options.pin === undefined ? { schemaVersion: 1, ownerUserId: 'owner', installationId: 'installed-one' } : options.pin); } },
+    users: { getRole: async () => 'user' },
     permissions: { getGranted: options.granted ?? (async () => ['cors_proxy']) },
     cors: async (url: string, request: unknown) => { calls.push({ url, options: request }); return options.cors ? options.cors(url, request) : response(url.endsWith('/api/version') ? { version: '0.4.0' } : url.endsWith('/api/captures') ? [{ id: '123-abc', characterName: 'Test', source: 'inspect', ts: 10, preview: 'PRIVATE_PROMPT' }] : record()); },
     onFrontendMessage: (fn: typeof handler) => { handler = fn; return () => { unsubscribed = true; }; },
@@ -245,8 +246,8 @@ describe('JAR backend account, permission and session boundaries', () => {
     const oldHost = fixture({ capabilities: {} }); oldHost.send({ id: 'c', command: 'connect' }); await wait();
     expect(f.calls).toHaveLength(0); expect(f.replies).toHaveLength(0); expect(oldHost.calls).toHaveLength(0); expect(oldHost.replies).toHaveLength(0);
   });
-  test('missing/mismatched installer pin or another admin account cannot read the local archive', async () => {
-    for (const pin of [null, {}, { schemaVersion: 1, ownerUserId: 'owner', installationId: 'other-installation' }, { schemaVersion: 2, ownerUserId: 'owner', installationId: 'installed-one' }]) {
+  test('missing/mismatched personal pin or another admin account cannot read the local archive', async () => {
+    for (const pin of [null, {}, { schemaVersion: 1, ownerUserId: 'someone-else', installationId: 'other-installation' }, { schemaVersion: 2, ownerUserId: 'owner', installationId: 'installed-one' }]) {
       const f = fixture({ pin }); f.send({ id: 'pin', command: 'connect' }); await wait(); expect(f.calls).toHaveLength(0); expect(f.replies[0].payload.error).toContain('account');
     }
     const other = fixture(); other.send({ id: 'admin', command: 'connect' }, 'another-admin'); await wait(); expect(other.calls).toHaveLength(0); expect(other.replies[0].userId).toBe('another-admin'); expect(other.replies[0].options.frontendSessionId).toBe('tab-one');
