@@ -104,10 +104,13 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
   const library = button('My chats', () => { void navigate({ kind: 'route', id: '/' }); }, 'jar-link');
   const retry = button('I checked my chats — retry', () => { unconfirmed.delete(sourceId); message('Ready to retry. Choose Import chat to continue.'); controls(); }, 'jar-link'); retry.hidden = true;
   const save = button('Import chat', () => { void runImport(); }, 'jar-button jar-primary'); actions.append(library, retry, save);
-  // Shown once a chat came through JAR: the main account's job is done, and JAR's other actions should not use it.
-  const switchAccount = el('div', 'jar-account-reminder'); switchAccount.hidden = true; switchAccount.setAttribute('role', 'note');
-  switchAccount.append(el('strong', '', 'Recovered all your chats? Switch JAR to a throwaway account now.'),
-    el('p', '', 'Your main JanitorAI account is only needed to recover your own chat histories. Previews, captures and rebuilds run automated requests and messages from whichever account JAR is signed into, which can get that account flagged or banned. In JAR’s browser, sign out of JanitorAI, then use JAR’s log in (🔓) with a throwaway account.'));
+  // A one-time tip after a chat comes through JAR; dismissing it hides it in this browser.
+  const TIP_KEY = 'jar_bridge:account_tip_dismissed';
+  let tipClosed = false;
+  const tipDismissed = () => { try { return globalThis.localStorage?.getItem(TIP_KEY) === '1'; } catch { return false; } };
+  const switchAccount = el('p', 'jar-help jar-account-reminder'); switchAccount.hidden = true;
+  switchAccount.append('Tip: once your chats are recovered, switch JAR to a throwaway JanitorAI account to keep your main one safe. ',
+    button('Got it', () => { tipClosed = true; try { globalThis.localStorage?.setItem(TIP_KEY, '1'); } catch { /* still hidden for this page */ } switchAccount.hidden = true; }, 'jar-link'));
   root.append(sources, jarPanel, filePanel, review, destination, status, done, switchAccount, actions);
 
   function message(text: string, tone = '') { if (!disposed) { status.textContent = text; status.dataset.tone = tone; } }
@@ -125,7 +128,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
     save.disabled = busy || !prepared || !target.value || !!saved || unconfirmed.has(sourceId);
     save.textContent = busy ? 'Working…' : saved ? 'Imported' : 'Import chat';
     retry.hidden = !unconfirmed.has(sourceId); retry.disabled = busy;
-    done.hidden = !saved; switchAccount.hidden = !saved || source !== 'jar'; doneLabel.textContent = saved ? `${saved.name} · ${saved.messageCount} messages imported` : '';
+    done.hidden = !saved; switchAccount.hidden = !saved || source !== 'jar' || tipClosed || tipDismissed(); doneLabel.textContent = saved ? `${saved.name} · ${saved.messageCount} messages imported` : '';
     destination.hidden = !prepared; actions.hidden = !prepared;
     fromJar.setAttribute('aria-pressed', String(source === 'jar')); fromFile.setAttribute('aria-pressed', String(source === 'file'));
     root.setAttribute('aria-busy', String(busy));

@@ -35,7 +35,7 @@ test('denying local JAR permission returns to an actionable state',async()=>{
   const input=ui.root.querySelector<HTMLInputElement>('#jar-chat-link')!;input.value='https://janitorai.com/chats/123';input.dispatchEvent(new dom.window.Event('input'));
   button('Load chat').click();await settle();expect(ui.root.textContent).toContain('Allow local JAR access');expect(ui.root.getAttribute('aria-busy')).toBe('false');
 });
-test('after a chat comes over from JAR, the importer tells the user to switch JAR to a throwaway account',async()=>{
+test('after a chat comes over from JAR, a dismissible tip suggests switching JAR to a throwaway account',async()=>{
   ui.destroy();
   globalThis.fetch=(async(url:string)=>String(url).startsWith('/api/v1/characters/summary')?Response.json({data:characters,total:1})
     :Response.json({results:[{chat_name:'History',success:true,chat_id:'native-chat',message_count:1}],summary:{total:1,imported:1,failed:0}},{status:201})) as typeof fetch;
@@ -47,5 +47,6 @@ test('after a chat comes over from JAR, the importer tells the user to switch JA
   const reminder=ui.root.querySelector<HTMLElement>('.jar-account-reminder')!;
   expect(reminder.hidden).toBe(true);
   button('Import chat').click();await settle();
-  expect(reminder.hidden).toBe(false);expect(reminder.textContent).toContain('Switch JAR to a throwaway account now');expect(reminder.textContent).toContain('flagged or banned');
+  expect(reminder.hidden).toBe(false);expect(reminder.textContent).toContain('switch JAR to a throwaway JanitorAI account');
+  button('Got it').click();expect(reminder.hidden).toBe(true);
 });

@@ -35,7 +35,7 @@ function keys(value: unknown): string[] { return Array.isArray(value) ? value.fi
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const confirmText: Record<Action, string> = {
-  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. Do not use your main JanitorAI account: these automated messages come from whichever account JAR is signed into and can get it flagged or banned. Your main account is only needed to recover your own chat histories; once that is done, switch JAR to a throwaway account before capturing. The creator chose to keep this lorebook closed.',
+  capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. Use a throwaway JanitorAI account for this, not your main one. The creator chose to keep this lorebook closed.',
   rebuild: 'JAR will send the captured lorebook text and this character’s card to the extraction LLM set in JAR’s ⚙ Settings. This uses that service’s quota or credit. The LLM infers trigger keywords, so review them after import.',
 };
 

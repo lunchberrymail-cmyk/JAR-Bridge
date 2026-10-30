@@ -106,7 +106,7 @@ export function createImportGuide(options: { start(mode: ImportMode): void }) {
       'In JAR’s top bar, click log in (🔓).',
       'A separate browser opens. Sign into JanitorAI there, then return to this Lumiverse importer.',
     ]), el('p', 'jar-help jar-guide-note', 'You do not enter your JanitorAI password in this Lumiverse importer. Leave JAR running. You do not need to prepare or link cards in JAR’s window for the next steps.'),
-    el('p', 'jar-help jar-guide-note', 'Important: your main account is only needed to recover your own chat histories. As soon as they are in Lumiverse, switch JAR to a throwaway JanitorAI account: in JAR’s browser, sign out of JanitorAI, then log in (🔓) with the throwaway account. Previews, hidden-card and lorebook captures and rebuilds run automated requests and messages from whichever account JAR is signed into, which can get your main account flagged or banned.'));
+    el('p', 'jar-help jar-guide-note', 'Your main account is only needed to recover your own chats. Afterwards, switch JAR to a throwaway account (sign out in JAR’s browser, then log in again): captures send automated messages that could get the signed-in account flagged.'));
 
   sections[3].append(el('p', 'jar-help', 'Use the character’s page link for this step, not the conversation link.'),
     el('p', 'jar-guide-example', 'Character link: janitorai.com/characters/…'),
