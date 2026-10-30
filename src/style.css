@@ -173,3 +173,7 @@
   .jar-import-modal .jar-shell { padding:12px 2px; }
   .jar-import-modal .jar-connection-panel, .jar-import-modal .jar-link-panel, .jar-import-modal .jar-preview, .jar-import-modal .jar-lorebooks { padding:12px; }
 }
+.jar-account-reminder { border:1px solid #d39a52; border-left-width:5px; background:#3d3022; color:#f3dfc4; border-radius:10px; padding:12px 14px; margin:12px 0; font-size:12px; line-height:1.5; }
+.jar-account-reminder[hidden] { display:none; }
+.jar-account-reminder strong { display:block; font-size:13px; margin-bottom:4px; }
+.jar-account-reminder p { margin:0; }

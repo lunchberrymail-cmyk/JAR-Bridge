@@ -44,7 +44,7 @@ Open **JAR Import** in Lumiverse's sidebar, or use Janiverse's import banner. Th
 
 The first time you open the importer, its **Help and import guide** walkthrough opens and takes you through these steps. If a connection check fails, **JAR won't connect? → First time with JAR? Set it up step by step** jumps back to them.
 
-**Use a throwaway account once your chats are over.** Your own JanitorAI account is only needed to read your own chat histories. When they are in Lumiverse, sign JAR into a throwaway account instead, especially before capturing closed lorebooks, which sends messages from whichever account JAR is signed into.
+> **Important: switch JAR to a throwaway account once your chat history is recovered.** Your main JanitorAI account is only needed to recover your own chat histories. Previews, hidden-card and lorebook captures and rebuilds run automated requests and messages from whichever account JAR is signed into, which can get your main account flagged or banned. As soon as your chats are in Lumiverse, sign out of JanitorAI in JAR's browser and log in (🔓) with a throwaway account. The importer shows this reminder after each chat it brings over from JAR, and in every capture confirmation.
 
 Use **Check JAR connection** in the importer to verify that JAR is running. This checks its version only; it does not open JAR's browser, require a JanitorAI login, or read saved cards. **Load saved cards** is a separate action. An empty archive in a fresh download is a successful connection.
 

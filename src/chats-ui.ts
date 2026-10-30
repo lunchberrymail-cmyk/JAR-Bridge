@@ -104,7 +104,11 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
   const library = button('My chats', () => { void navigate({ kind: 'route', id: '/' }); }, 'jar-link');
   const retry = button('I checked my chats — retry', () => { unconfirmed.delete(sourceId); message('Ready to retry. Choose Import chat to continue.'); controls(); }, 'jar-link'); retry.hidden = true;
   const save = button('Import chat', () => { void runImport(); }, 'jar-button jar-primary'); actions.append(library, retry, save);
-  root.append(sources, jarPanel, filePanel, review, destination, status, done, actions);
+  // Shown once a chat came through JAR: the main account's job is done, and JAR's other actions should not use it.
+  const switchAccount = el('div', 'jar-account-reminder'); switchAccount.hidden = true; switchAccount.setAttribute('role', 'note');
+  switchAccount.append(el('strong', '', 'Recovered all your chats? Switch JAR to a throwaway account now.'),
+    el('p', '', 'Your main JanitorAI account is only needed to recover your own chat histories. Previews, captures and rebuilds run automated requests and messages from whichever account JAR is signed into, which can get that account flagged or banned. In JAR’s browser, sign out of JanitorAI, then use JAR’s log in (🔓) with a throwaway account.'));
+  root.append(sources, jarPanel, filePanel, review, destination, status, done, switchAccount, actions);
 
   function message(text: string, tone = '') { if (!disposed) { status.textContent = text; status.dataset.tone = tone; } }
   function valid(token: number) { return !disposed && active && token === epoch; }
@@ -121,7 +125,7 @@ export function createChatHistory(ctx: SpindleFrontendContext, options: Options)
     save.disabled = busy || !prepared || !target.value || !!saved || unconfirmed.has(sourceId);
     save.textContent = busy ? 'Working…' : saved ? 'Imported' : 'Import chat';
     retry.hidden = !unconfirmed.has(sourceId); retry.disabled = busy;
-    done.hidden = !saved; doneLabel.textContent = saved ? `${saved.name} · ${saved.messageCount} messages imported` : '';
+    done.hidden = !saved; switchAccount.hidden = !saved || source !== 'jar'; doneLabel.textContent = saved ? `${saved.name} · ${saved.messageCount} messages imported` : '';
     destination.hidden = !prepared; actions.hidden = !prepared;
     fromJar.setAttribute('aria-pressed', String(source === 'jar')); fromFile.setAttribute('aria-pressed', String(source === 'file'));
     root.setAttribute('aria-busy', String(busy));
