@@ -1,7 +1,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { uuid } from './uuid';
 import { isRecordId, type JarLinkResult, type JarRequest, type JarResponse } from './jar-adapter';
-import { parseJanitorLink, type JanitorLink } from './janitor-link';
+import { characterPageUrl, parseJanitorLink, type JanitorLink } from './janitor-link';
 
 type Command = Exclude<JarRequest['command'], 'cancel'>;
 type Result = JarResponse['result'];
@@ -95,7 +95,8 @@ function isCardResult(value: unknown, recordId?: string): boolean {
   if (!result) return false;
   const card = object(result.card);
   return isRecordId(result.recordId) && (!recordId || result.recordId === recordId) &&
-    typeof result.name === 'string' && card?.spec === 'chara_card_v2' && card.spec_version === '2.0' && !!object(card.data);
+    typeof result.name === 'string' && card?.spec === 'chara_card_v2' && card.spec_version === '2.0' && !!object(card.data)
+    && (result.sourceUrl === undefined || (typeof result.sourceUrl === 'string' && characterPageUrl(result.sourceUrl) !== undefined));
 }
 
 /** One request per frontend document, with no archive state retained after settlement. */

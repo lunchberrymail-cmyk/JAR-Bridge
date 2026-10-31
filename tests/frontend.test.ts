@@ -131,3 +131,12 @@ test('Clear empties the link field and the preview', async () => {
   expect(document.querySelector<HTMLElement>('.jar-preview')!.hidden).toBe(true);
   expect(clear.disabled).toBe(true);
 });
+
+test('a pasted link, emojis included, ends up as the original source in the creator notes', async () => {
+  const input = document.querySelector<HTMLInputElement>('#jar-source-link')!;
+  input.value = 'https://janitorai.com/characters/11111111-2222-3333-4444-555555555555_character-takoda-%E2%9C%A9-riv-ally?ref=x';
+  input.dispatchEvent(new dom.window.Event('input'));
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'Preview link')!.click(); await settle();
+  expect(requests.find(request => request.command === 'preview-link').sourceUrl).toBe('https://janitorai.com/characters/11111111-2222-3333-4444-555555555555');
+  expect(document.querySelector('.jar-preview')?.textContent).toContain('Original source: https://janitorai.com/characters/11111111-2222-3333-4444-555555555555_character-takoda-%E2%9C%A9-riv-ally');
+});

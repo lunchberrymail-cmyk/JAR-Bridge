@@ -356,6 +356,37 @@ describe('lorebook panel', () => {
     expect(p.ui.root.textContent).not.toContain('Alice');
   });
 
+  test('the vectorize tick converts each newly imported book with Lumiverse’s own conversion', async () => {
+    const calls: string[] = [];
+    let embeddings = { enabled: false, has_api_key: false, vectorize_world_books: true };
+    globalThis.fetch = (async (url: string, init: any) => {
+      calls.push(`${init?.method || 'GET'} ${url}`);
+      if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] });
+      if (url === '/api/v1/embeddings/config') return Response.json(embeddings);
+      if (url.endsWith('/convert-to-vectorized')) return Response.json({ converted: 2, summary: {} });
+      return Response.json({ world_book: { id: `book-${calls.length}`, name: JSON.parse(init.body).name }, entry_count: 2 }, { status: 201 });
+    }) as any;
+    const p = panel(request => request.command === 'lorebooks' ? { result: toLorebooks(record()) } : undefined);
+    p.ui.show('123-abc'); await settle();
+    const tick = p.ui.root.querySelector<HTMLInputElement>('.jar-lorebook-vectorize input')!;
+    expect(tick.checked).toBe(false);
+    p.ui.root.querySelectorAll<HTMLButtonElement>('.jar-lorebook button.jar-primary')[0].click(); for (let i = 0; i < 3; i++) await settle();
+    expect(calls.some(call => call.endsWith('/convert-to-vectorized'))).toBe(false);
+    tick.checked = true; tick.dispatchEvent(new tick.ownerDocument.defaultView!.Event('change')); for (let i = 0; i < 3; i++) await settle();
+    expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-vectorize-hint')!.hidden).toBe(false);
+    p.button('Import rebuilt lorebook')!.click(); for (let i = 0; i < 4; i++) await settle();
+    const book = calls.filter(call => call.startsWith('POST /api/v1/world-books/import')).length;
+    expect(book).toBe(2);
+    const conversions = calls.filter(call => call.endsWith('/convert-to-vectorized'));
+    expect(conversions).toHaveLength(1);
+    expect(conversions[0].startsWith('POST /api/v1/world-books/book-')).toBe(true);
+    expect(p.ui.root.textContent).toContain('2 entries vectorized.');
+    embeddings = { enabled: true, has_api_key: true, vectorize_world_books: true };
+    tick.checked = false; tick.dispatchEvent(new tick.ownerDocument.defaultView!.Event('change'));
+    tick.checked = true; tick.dispatchEvent(new tick.ownerDocument.defaultView!.Event('change')); for (let i = 0; i < 3; i++) await settle();
+    expect(p.ui.root.querySelector<HTMLElement>('.jar-lorebook-vectorize-hint')!.hidden).toBe(true);
+  });
+
   test('a public book can still be imported on its own before the card', async () => {
     const posted: any[] = [];
     globalThis.fetch = (async (url: string, init: any) => { posted.push({ url, body: JSON.parse(init.body) }); return Response.json({ world_book: { id: 'book-9', name: 'MENAGERIE' }, entry_count: 2 }, { status: 201 }); }) as any;

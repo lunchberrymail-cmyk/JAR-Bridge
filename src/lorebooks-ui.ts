@@ -92,6 +92,18 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const pickerFind = button('Find', () => { void findCharacters(pickerSearch.value); });
   const pickerRow = el('div', 'jar-actions'); pickerRow.append(pickerSearch, pickerFind);
   picker.append(pickerLabel, pickerRow);
+  // Vectorizing uses Lumiverse's own "Convert to vectorized" on each imported book.
+  // Keywords keep working; embeddings add matching by meaning. The choice is remembered per browser.
+  const VECTORIZE_KEY = 'jar_bridge:vectorize_lorebooks';
+  const vectorizeLabel = el('label', 'jar-checkbox jar-lorebook-vectorize');
+  const vectorize = el('input'); vectorize.type = 'checkbox';
+  try { vectorize.checked = globalThis.localStorage?.getItem(VECTORIZE_KEY) === '1'; } catch { /* default off */ }
+  const vectorizeHint = el('p', 'jar-help jar-lorebook-vectorize-hint'); vectorizeHint.hidden = true;
+  vectorize.addEventListener('change', () => {
+    try { globalThis.localStorage?.setItem(VECTORIZE_KEY, vectorize.checked ? '1' : '0'); } catch { /* this page only */ }
+    void checkEmbeddings();
+  });
+  vectorizeLabel.append(vectorize, el('span', '', 'Vectorize imported lorebooks (keywords still work; Lumiverse’s embeddings also match entries by meaning)'));
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -132,7 +144,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   waitRow.append(waitText, stop);
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
-  root.append(heading, intro, refresh, picker, notice, callout, books, closed, waitRow, status);
+  root.append(heading, intro, refresh, picker, vectorizeLabel, vectorizeHint, notice, callout, books, closed, waitRow, status);
   function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !uncertain.has(bookKey(book)) && (!imported.has(bookKey(book)) || needsAttach(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
@@ -160,6 +172,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     calloutButton.className = calloutWithCard.hidden ? 'jar-button jar-primary' : 'jar-button';
     if (calloutRow.firstChild !== (calloutWithCard.hidden ? calloutButton : calloutWithCard)) calloutRow.prepend(calloutWithCard.hidden ? calloutButton : calloutWithCard);
     picker.hidden = !!character || !data || !data.books.length;
+    vectorizeLabel.hidden = !data || !data.books.length; vectorize.disabled = locked;
+    if (vectorizeLabel.hidden) vectorizeHint.hidden = true;
     pickerSelect.replaceChildren(option('Do not attach (World Info only)', ''), ...matches.map(item => option(item.name, item.id)));
     pickerSelect.value = existing?.id || '';
     pickerSelect.disabled = pickerSearch.disabled = pickerFind.disabled = locked;
@@ -378,6 +392,29 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     finally { if (!disposed && token === generation) { waiting = false; setBusy(false); if (recovered && data) options.onHiddenCardCaptured?.(data.earlierRecordId || data.recordId); } }
   }
 
+  /** Shows a hint when vectorizing is on but Lumiverse has no working embeddings yet. */
+  async function checkEmbeddings() {
+    if (!vectorize.checked) { vectorizeHint.hidden = true; return; }
+    try {
+      const response = await fetch('/api/v1/embeddings/config', { credentials: 'same-origin', signal: abort.signal });
+      const config = response.ok ? await response.json() as Record<string, unknown> : {};
+      if (disposed || !vectorize.checked) return;
+      const ready = config.enabled === true && config.has_api_key === true && config.vectorize_world_books !== false;
+      vectorizeHint.textContent = ready ? '' : 'Embeddings are not set up in Lumiverse yet. Entries will still trigger by keyword; set up embeddings in Lumiverse’s settings to add matching by meaning.';
+      vectorizeHint.hidden = ready;
+    } catch { if (!disposed) vectorizeHint.hidden = true; }
+  }
+
+  /** Lumiverse's native conversion; returns a short note for the status message. */
+  async function vectorizeBook(worldBookId: string): Promise<string> {
+    try {
+      const response = await fetch(`/api/v1/world-books/${encodeURIComponent(worldBookId)}/convert-to-vectorized`, { method: 'POST', credentials: 'same-origin', signal: abort.signal });
+      if (!response.ok) throw new Error();
+      const converted = (await response.json() as { converted?: unknown }).converted;
+      return typeof converted === 'number' ? ` ${converted} entr${converted === 1 ? 'y' : 'ies'} vectorized.` : ' Vectorized.';
+    } catch (error) { if (isAbort(error)) throw error; return ' Not vectorized: use Convert to vectorized in World Info.'; }
+  }
+
   async function importBook(book: JarLorebook, attach: boolean) {
     const key = bookKey(book);
     const target = attach ? attachTarget() : undefined, earlier = imported.get(key);
@@ -389,11 +426,13 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       const result = earlier || await importNativeLorebook(ctx, nativeLorebook(book), () => !disposed && token === generation, abort.signal);
       imported.set(key, result);
       if (disposed || token !== generation) return;
-      if (!target) { message(`Imported ${result.entryCount} entries into World Info.`, 'success'); return; }
+      const vectorNote = !earlier && vectorize.checked ? await vectorizeBook(result.id) : '';
+      if (disposed || token !== generation) return;
+      if (!target) { message(`Imported ${result.entryCount} entries into World Info.${vectorNote}`, 'success'); return; }
       try {
         await options.client.request('attach-lorebook', options.getBaseUrl(), undefined, undefined, undefined, { characterId: target.id, worldBookId: result.id });
         attachedTo.set(key, target);
-        if (!disposed && token === generation) message(earlier ? `Attached ${result.name} to ${target.name}.` : `Imported ${result.entryCount} entries and attached them to ${target.name}.`, 'success');
+        if (!disposed && token === generation) message(earlier ? `Attached ${result.name} to ${target.name}.` : `Imported ${result.entryCount} entries and attached them to ${target.name}.${vectorNote}`, 'success');
       } catch (error) {
         if (!isAbort(error) && !disposed && token === generation) message(`Imported into World Info, but not attached: ${error instanceof Error ? error.message : 'attachment failed.'} Attach it from the character’s lorebook settings.`, 'warning');
       }
@@ -411,6 +450,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     /** Read lorebooks for a newly previewed JAR character. Does not capture anything. */
     show(id: string, hidden = false) {
       if (disposed) return;
+      if (vectorize.checked) void checkEmbeddings();
       if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; character = undefined; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },

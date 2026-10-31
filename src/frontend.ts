@@ -11,7 +11,7 @@ import { createImportGuide } from './import-guide';
 import { createLorebooks } from './lorebooks-ui';
 import { createCleanup } from './cleanup-ui';
 import { bytesHash } from './content-hash';
-import { parseJanitorLink } from './janitor-link';
+import { characterPageUrl, parseJanitorLink, withSourceNote } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
 
 const importIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>';
@@ -208,6 +208,13 @@ export function setup(ctx: SpindleFrontendContext) {
     recordAliases.set(key, alias);
   }
   // A chosen file is known by its contents: two files can share a name, size and date.
+  /** Creator notes end with the JanitorAI page the card came from; the pasted link keeps its readable name. */
+  function withSource(card: JarCardResult, pasted?: string): JarCardResult {
+    const id = (url?: string) => { try { const link = parseJanitorLink(url); return link.kind === 'character' ? link.characterId : undefined; } catch { return undefined; } };
+    const page = pasted && id(pasted) && (!card.sourceUrl || id(pasted) === id(card.sourceUrl)) ? pasted : card.sourceUrl;
+    const notes = withSourceNote(card.card.data.creator_notes, page);
+    return notes === card.card.data.creator_notes ? card : { ...card, card: { ...card.card, data: { ...card.card.data, creator_notes: notes } } };
+  }
   function sourceKey() { return mode === 'archive' && selected ? recordKey(selected.recordId) : chosenFile && chosenFileHash ? `file:${chosenFileHash}` : ''; }
   function restoreOutcome() { const key = sourceKey(); imported = importedSources.get(key); uncertain = uncertainSources.has(key); }
   function updateControls() {
@@ -271,6 +278,7 @@ export function setup(ctx: SpindleFrontendContext) {
     try {
       if (!await permission('cors_proxy')) { message('Allow local JAR access to preview this link.', 'warning'); return; }
       if (disposed || token !== generation) return;
+      const pastedPage = source.kind === 'character' ? characterPageUrl(sourceLink.value) : undefined;
       const result = await client.requestLink(endpoint, source.sourceUrl);
       if (disposed || token !== generation) return;
       if (result.sourceUrl !== source.sourceUrl || result.kind !== source.kind) throw new Error('JAR returned a different link. Nothing was imported.');
@@ -282,7 +290,7 @@ export function setup(ctx: SpindleFrontendContext) {
       if (!captures.some(item => item.id === result.recordId)) captures.unshift({ id: result.recordId, name: result.card?.name || result.history?.characterName || 'Character from link', source: 'JanitorAI link', ts: Date.now() });
       pendingHistory = result.history || carriedHistory;
       if (result.card) {
-        selected = result.card; restoreOutcome(); renderPreview();
+        selected = withSource(result.card, pastedPage); restoreOutcome(); renderPreview();
         message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character is already imported. You can continue to its history.' : pendingHistory ? 'Card and conversation loaded. Review and import the card, then choose Next: import chat history. No need to paste the link again.' : 'Review the card, then choose Import to Lumiverse.');
       } else if (result.history) {
         historyStart = { source: 'jar', recordId: result.recordId, preparedHistory: result.history, character: importedSources.get(recordKey(result.recordId)), notice: result.warning || 'The conversation loaded, but its character card is incomplete. Choose its existing Lumiverse character, or get a card first.', characterUrl: result.characterUrl };
@@ -350,7 +358,7 @@ export function setup(ctx: SpindleFrontendContext) {
       const result = await client.request('card', address.value.trim(), item.id) as JarCardResult;
       if (disposed || token !== generation) return;
       if (!result || result.recordId !== item.id || !result.card?.data) throw new Error('This card could not be previewed. Refresh the list.');
-      selected = result; restoreOutcome(); renderPreview(); message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character has already been imported.' : 'Review the card, then choose Import to Lumiverse.');
+      selected = withSource(result); restoreOutcome(); renderPreview(); message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character has already been imported.' : 'Review the card, then choose Import to Lumiverse.');
     } catch (error) { if (!isAbort(error)) message(error instanceof Error ? error.message : 'Finish/export the character in JAR, then use Import card file.', 'error'); }
     finally { if (!disposed && token === generation) { busy = false; renderList(); updateControls(); } }
     if (token === generation) syncLorebooks();

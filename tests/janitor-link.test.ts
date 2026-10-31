@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseJanitorLink } from '../src/janitor-link';
+import { characterPageUrl, parseJanitorLink, withSourceNote } from '../src/janitor-link';
 
 const characterId = 'abcdef12-3456-7890-abcd-ef1234567890';
 const characterUrl = `https://janitorai.com/characters/${characterId}`;
@@ -36,7 +36,7 @@ describe('explicit JanitorAI link parsing', () => {
   });
 
   test('rejects raw or escaped path normalization tricks before any transport can use them', () => {
-    for (const path of ['/other/../chats/12345', '/chats/./12345', '/chats/12345/..', '/chats//12345', '//chats/12345', '/chats/%31%32%33%34%35', '/chats/12345%2fmessages%2f999', '/chats/12345%5cmessages%5c999', '/chats/%2e%2e/chats/12345', '/chats/%252e%252e/chats/12345', '/characters/' + characterId + '%2fedit', '/characters/' + characterId + '-a.b', '/characters/' + characterId + '-a/../b']) {
+    for (const path of ['/other/../chats/12345', '/chats/./12345', '/chats/12345/..', '/chats//12345', '//chats/12345', '/chats/%31%32%33%34%35', '/chats/12345%2fmessages%2f999', '/chats/12345%5cmessages%5c999', '/chats/%2e%2e/chats/12345', '/chats/%252e%252e/chats/12345', '/characters/' + characterId + '%2fedit', '/characters/' + characterId + '-a%2fb', '/characters/' + characterId + '-a%5Cb', '/characters/' + characterId + '-a/../b']) {
       expect(() => parseJanitorLink(`https://janitorai.com${path}`)).toThrow();
     }
     for (const input of ['https:\\janitorai.com\\chats\\12345', `${chatUrl}\\messages\\999`, `${chatUrl}?redirect=\\evil.example`, `${chatUrl}#\\fragment`]) expect(() => parseJanitorLink(input)).toThrow();
@@ -49,12 +49,35 @@ describe('explicit JanitorAI link parsing', () => {
     expect(() => parseJanitorLink('https://janitorai.com/chats/12 345')).toThrow();
   });
 
+  test('character links whose name part has emojis, symbols or escapes reduce to the ID', () => {
+    for (const name of ['_character-takoda-%E2%9C%A9-riv-ally', '_character-takoda-✩-riv-ally', '_character-mr.-x', '-%F0%9F%92%8B-kiss'])
+      expect(parseJanitorLink(`${characterUrl}${name}?utm=1`)).toEqual({ kind: 'character', characterId, sourceUrl: characterUrl });
+  });
+
   test('bounds identities and input size without echoing input in an error', () => {
     const largestId = '9'.repeat(32);
     expect(parseJanitorLink(`https://janitorai.com/chats/${largestId}/messages/${largestId}`)).toEqual({ kind: 'chat', chatId: largestId, sourceUrl: `https://janitorai.com/chats/${largestId}` });
-    expect(parseJanitorLink(`${characterUrl}-${'a'.repeat(200)}`).sourceUrl).toBe(characterUrl);
-    for (const input of ['https://janitorai.com/chats/0', 'https://janitorai.com/chats/012345', `https://janitorai.com/chats/${'9'.repeat(33)}`, `${chatUrl}/messages/0`, `${chatUrl}/messages/01`, `${chatUrl}/messages/${'9'.repeat(33)}`, `${characterUrl}-${'a'.repeat(201)}`, `${chatUrl}?private=${'x'.repeat(4096)}`]) expect(() => parseJanitorLink(input)).toThrow();
+    expect(parseJanitorLink(`${characterUrl}-${'a'.repeat(600)}`).sourceUrl).toBe(characterUrl);
+    for (const input of ['https://janitorai.com/chats/0', 'https://janitorai.com/chats/012345', `https://janitorai.com/chats/${'9'.repeat(33)}`, `${chatUrl}/messages/0`, `${chatUrl}/messages/01`, `${chatUrl}/messages/${'9'.repeat(33)}`, `${characterUrl}-${'a'.repeat(601)}`, `${chatUrl}?private=${'x'.repeat(4096)}`]) expect(() => parseJanitorLink(input)).toThrow();
     try { parseJanitorLink('https://private-credential.example/sensitive'); throw new Error('Expected rejection'); }
     catch (error) { expect(String(error)).not.toContain('private-credential'); expect(String(error)).not.toContain('sensitive'); }
+  });
+});
+
+describe('original source note', () => {
+  const id = 'f261b93d-8360-4636-88e2-5a9031a560a0';
+  test('keeps the pasted page name, encodes emojis, and drops tracking', () => {
+    expect(characterPageUrl(`https://www.janitorai.com/characters/${id}_character-takoda-✩-riv-ally/?utm=1#x`)).toBe(`https://janitorai.com/characters/${id}_character-takoda-%E2%9C%A9-riv-ally`);
+    expect(characterPageUrl(`https://janitorai.com/characters/${id}_character-takoda-%E2%9C%A9-riv-ally`)).toBe(`https://janitorai.com/characters/${id}_character-takoda-%E2%9C%A9-riv-ally`);
+    expect(characterPageUrl('https://janitorai.com/chats/12345')).toBeUndefined();
+    expect(characterPageUrl('https://evil.example/characters/' + id)).toBeUndefined();
+  });
+  test('adds the line once, after any existing notes', () => {
+    const page = `https://janitorai.com/characters/${id}_character-laszlo`;
+    expect(withSourceNote('', page)).toBe(`Original source: ${page}`);
+    expect(withSourceNote('Made by me.\n', page)).toBe(`Made by me.\n\nOriginal source: ${page}`);
+    expect(withSourceNote(withSourceNote('Notes', page), page)).toBe(`Notes\n\nOriginal source: ${page}`);
+    expect(withSourceNote(`See https://janitorai.com/characters/${id.toUpperCase()}`, page)).toContain('See');
+    expect(withSourceNote('Notes', 'https://evil.example/x')).toBe('Notes');
   });
 });

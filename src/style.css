@@ -175,3 +175,6 @@
 }
 .jar-account-reminder { margin:10px 0 0; }
 .jar-account-reminder[hidden] { display:none; }
+.jar-lorebook-vectorize { padding:4px 0 0; }
+.jar-lorebook-vectorize[hidden], .jar-lorebook-vectorize-hint[hidden] { display:none; }
+.jar-lorebook-vectorize-hint { margin:4px 0 0 26px; color:#e7c48f; }

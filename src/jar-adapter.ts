@@ -31,6 +31,8 @@ export interface JarCardResult {
   card: CardV2;
   avatarDataUrl?: string;
   warnings?: string[];
+  /** The JanitorAI character page this card came from, when JAR knows it. */
+  sourceUrl?: string;
 }
 export interface JarDeleteResult { deleted: string[]; failed: string[] }
 /** What cleanup needs to tell copies of one character apart; never the captured content. */

@@ -3,7 +3,7 @@ import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, t
 import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRoute } from './transport';
 import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
-import { parseJanitorLink } from './janitor-link';
+import { characterPageUrl, parseJanitorLink } from './janitor-link';
 import { createOwnerBinding, hasJarAccess } from './owner-binding';
 import { createLinkIndex } from './link-index';
 
@@ -24,8 +24,16 @@ function characterUrl(record: Record<string, unknown>): string | undefined {
 
 function exportCard(record: unknown): JarCardResult {
   const card = toCardV2(record);
-  return { recordId: card.recordId, name: card.name, card: card.card,
+  return { recordId: card.recordId, name: card.name, card: card.card, ...sourceOf(object(record)),
     ...(card.avatarDataUrl ? { avatarDataUrl: card.avatarDataUrl } : {}), ...(card.warnings ? { warnings: card.warnings } : {}) };
+}
+
+/** The record's own page link when it is a link to this same character, else the plain ID link. */
+function sourceOf(record: Record<string, unknown>): { sourceUrl?: string } {
+  const canonical = characterUrl(record);
+  if (!canonical) return {};
+  const page = characterPageUrl(record.url);
+  return { sourceUrl: page && page.toLowerCase().startsWith(canonical) ? page : canonical };
 }
 
 function availableCard(record: unknown): JarCardResult | undefined {

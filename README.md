@@ -65,7 +65,7 @@ If you view Lumiverse on a phone while JAR is already running on the server comp
 
 Opening **JAR Import** from the drawer opens the import assistant in a larger window. The drawer itself only offers to reopen it; **Use it in this drawer instead** keeps the full importer there.
 
-1. In **JanitorAI link**, paste a `https://janitorai.com/characters/…` or `/chats/…` link and choose **Preview link**. **Clear** empties the field and the preview.
+1. In **JanitorAI link**, paste a `https://janitorai.com/characters/…` or `/chats/…` link and choose **Preview link**. **Clear** empties the field and the preview. Links whose name part contains emojis or symbols (raw or `%`-encoded) work; only the character ID is sent to JAR.
 2. Review the character and choose **Import to Lumiverse** if you need it in your library.
 3. Choose **Next: import chat history**. For a conversation link, the loaded messages follow automatically. If the character is already here, **Use an existing character for this chat** skips another card import.
 4. Review the messages, choose the destination character, then choose **Import chat → Continue chat**.
@@ -86,6 +86,7 @@ For files, choose **Import card file** for PNG/JSON/CHARX cards or **Chat histor
 
 After you preview a JanitorAI character link, a **Lorebooks** section lists what JAR has for that character. Expand a book to review its entries and keywords. Books go to Lumiverse's World Info through its normal importer.
 
+- **Vectorize imported lorebooks** (a tick in the Lorebooks section, remembered in your browser) runs Lumiverse's own **Convert to vectorized** on each book the bridge imports. Entries keep triggering by keyword; with embeddings set up in Lumiverse they are also matched by meaning. If embeddings are not set up yet, the tick says so.
 - **Public lorebooks** that JAR downloaded are imported and attached automatically when you import the character card. You can also import one on its own with **Import lorebook** before importing the card.
 - **Every lorebook is listed beside the card name**, colored by where it stands: open books in green (*Open · imports with the card*, then *Attached to <character>*), closed ones in red (*CLOSED*, *CLOSED · cannot be captured*), orange (*CLOSED · captured, not rebuilt*), purple (*CLOSED · rebuilt, ready to import*) and green once imported. **Lorebook details** jumps to the steps.
 - **Closed lorebooks** need two explicit steps, each with a confirmation:
@@ -124,7 +125,7 @@ These sites are not presented as a way to retrieve your private chat history. Fo
 
 ## What is saved
 
-Cards use Lumiverse's normal importer and retain supported definition fields, greetings (alternate greetings that repeat the first message with JanitorAI's "created by … on janitorai.com" line, are dropped; placeholder greetings such as `.` are kept), instructions, tags, card extensions and embedded character lorebooks. PNG imports preserve portraits. Public creator names and JanitorAI creator IDs supplied by JAR are retained as card attribution, including the creator's public profile link when available. Some JAR cards also carry a public SoundCloud track ID, retained as display metadata for compatible interfaces such as Janiverse.
+Each card's creator notes end with `Original source: <JanitorAI link>`, using the link you pasted (with its readable name part) when there is one; the line is not added twice. Cards use Lumiverse's normal importer and retain supported definition fields, greetings (alternate greetings that repeat the first message with JanitorAI's "created by … on janitorai.com" line, are dropped; placeholder greetings such as `.` are kept), instructions, tags, card extensions and embedded character lorebooks. PNG imports preserve portraits. Public creator names and JanitorAI creator IDs supplied by JAR are retained as card attribution, including the creator's public profile link when available. Some JAR cards also carry a public SoundCloud track ID, retained as display metadata for compatible interfaces such as Janiverse.
 
 Each history import creates **one new normal Lumiverse chat**. It retains message text and macros, speaker names, alternate replies, the selected reply, and available timestamps. Historic persona names do not automatically bind a Lumiverse persona. Native timestamps have second precision. JAR's own JSONL exporter may already trim text or group alternatives; the bridge preserves the export it receives. Raw JAR JSON imports preserve literal text locally.
 

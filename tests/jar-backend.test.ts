@@ -241,6 +241,20 @@ describe('JAR backend account, permission and session boundaries', () => {
     expect(f.calls.map(c => c.url)).toEqual(['http://127.0.0.1:4577/api/captures/123-abc']);
     expect(f.replies[0].payload.result.recordId).toBe('123-abc'); expect(f.replies[0].payload.result.card.data.first_mes).toBe('Hello {{user}}'); expect(JSON.stringify(f.replies)).not.toContain('PRIVATE');
   });
+  test('a card reports its JanitorAI page: the record’s own link for that character, else the plain ID link', async () => {
+    const id = '26239fb7-b292-4680-a5c0-c3671b02bac1';
+    const cases: [Record<string, unknown>, string | undefined][] = [
+      [{ characterId: id, url: `https://janitorai.com/characters/${id}_character-laszlo-stray?x=1` }, `https://janitorai.com/characters/${id}_character-laszlo-stray`],
+      [{ characterId: id, url: 'https://janitorai.com/characters/11111111-2222-3333-4444-555555555555_character-other' }, `https://janitorai.com/characters/${id}`],
+      [{ characterId: id, url: 'https://evil.example/x' }, `https://janitorai.com/characters/${id}`],
+      [{}, undefined],
+    ];
+    for (const [extra, expected] of cases) {
+      const f = fixture({ cors: async () => response({ ...record(), ...extra }) });
+      f.send({ id: 'card-src', command: 'card', recordId: '123-abc' }); await wait();
+      expect(f.replies[0].payload.result.sourceUrl).toBe(expected);
+    }
+  });
   test('no trusted session or missing host session-routing capability means no request or broadcast', async () => {
     const f = fixture(); f.sendWithoutSession({ id: 'a', command: 'connect' }); f.send({ id: 'b', command: 'connect' }, '');
     const oldHost = fixture({ capabilities: {} }); oldHost.send({ id: 'c', command: 'connect' }); await wait();
