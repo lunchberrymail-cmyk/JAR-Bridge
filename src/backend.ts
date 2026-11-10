@@ -6,6 +6,7 @@ import { assertLinkedConversation, isChatId, toConversations, toHistory } from '
 import { characterPageUrl, parseJanitorLink } from './janitor-link';
 import { createOwnerBinding, hasJarAccess } from './owner-binding';
 import { createLinkIndex } from './link-index';
+import { registerUuidHost } from './uuid-host';
 
 type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
 const requestChannel = 'jar_bridge:request';
@@ -42,6 +43,7 @@ function availableCard(record: unknown): JarCardResult | undefined {
 
 /** Session-targeted, permission-gated archive access and explicit selected-link previews. */
 export function setupJarBackend(api: SpindleAPI): () => void {
+  const stopUuids = registerUuidHost(api);
   const jobs = new Map<string, Job>();
   const binding = createOwnerBinding(api);
   // The JAR record remembered for each character link, reused after checking it
@@ -306,7 +308,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   });
   // cors has no cancellation signal: ignore in-flight results after cancellation
   // and prevent any remaining request in a sequence from starting.
-  return () => { disposed = true; off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
+  return () => { disposed = true; stopUuids(); off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
 }
 
 declare const spindle: SpindleAPI;

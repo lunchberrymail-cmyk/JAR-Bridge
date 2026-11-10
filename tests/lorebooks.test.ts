@@ -4,6 +4,7 @@ import { setupJarBackend } from '../src/backend';
 import { nativeLorebook, toLorebooks, worldInfoEntries } from '../src/lorebook-adapter';
 import { createJarTransport, JarStillRunningError } from '../src/transport';
 import { createJarClient } from '../src/client';
+import { withHostUuid } from './host-uuid-fixture';
 import { createLorebooks } from '../src/lorebooks-ui';
 
 const cleanups: (() => void)[] = [];
@@ -176,7 +177,7 @@ describe('lorebook panel', () => {
       onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
       sendToBackend: (request: any) => { requests.push(request); if (request.command === 'cancel') return; const result = reply(request); if (result !== undefined) setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, ...result }), 0); },
     };
-    const client = createJarClient(ctx);
+    const client = createJarClient(withHostUuid(ctx));
     const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, pollMs: 1, onHiddenCardCaptured, ...extra });
     document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text);
@@ -432,7 +433,7 @@ describe('lorebook status beside the card', () => {
     const ctx: any = { permissions: { getGranted: async () => [] }, onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
       sendToBackend: (request: any) => { if (request.command === 'lorebooks') setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result }), 0); } };
     globalThis.fetch = (async () => Response.json({ data: [] })) as any;
-    const client = createJarClient(ctx);
+    const client = createJarClient(withHostUuid(ctx));
     const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
     document.body.append(ui.banner, ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     return ui;
@@ -460,7 +461,7 @@ describe('lorebook status beside the card', () => {
     const ctx: any = { permissions: { getGranted: async () => ['cors_proxy', 'characters', 'world_books'] }, onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
       sendToBackend: (request: any) => { const result = request.command === 'lorebooks' ? toLorebooks(record()) : request.command === 'attach-lorebook' ? { characterId: request.characterId, worldBookIds: [request.worldBookId] } : undefined;
         if (result) setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result }), 0); } };
-    const client = createJarClient(ctx);
+    const client = createJarClient(withHostUuid(ctx));
     const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
     document.body.append(ui.banner, ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     ui.show('123-abc'); await settle();

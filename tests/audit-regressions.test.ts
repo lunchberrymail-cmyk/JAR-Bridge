@@ -1,3 +1,4 @@
+import { withHostUuid } from './host-uuid-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { createLorebooks } from '../src/lorebooks-ui';
@@ -27,7 +28,7 @@ test('a lorebook imported before its character is attached, not imported twice, 
     if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] });
     posts.push(JSON.parse(init.body).name); return Response.json({ world_book: { id: 'native-book-1', name: 'World' }, entry_count: 1 }, { status: 201 });
   }) as any;
-  const client = createJarClient(ctx);
+  const client = createJarClient(withHostUuid(ctx));
   const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
   document.body.append(ui.banner, ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
   ui.show('record-1'); await settle();
@@ -55,7 +56,7 @@ test('a book imported on its own gets an attach-only button once a character is 
     if (url.startsWith('/api/v1/characters/summary')) return Response.json({ data: [] });
     posts.push(JSON.parse(init.body).name); return Response.json({ world_book: { id: 'native-book-9', name: 'Closed (rebuilt)' }, entry_count: 1 }, { status: 201 });
   }) as any;
-  const client = createJarClient(ctx);
+  const client = createJarClient(withHostUuid(ctx));
   const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
   document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
   const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text);

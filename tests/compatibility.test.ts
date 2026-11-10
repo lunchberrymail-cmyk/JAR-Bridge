@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { contentHash } from '../src/content-hash';
-import { uuid } from '../src/uuid';
+import { contentHash, bytesHash } from '../src/content-hash';
+
 import { importNativeCard } from '../src/import-flow';
 import { importNativeChat } from '../src/chat-import';
 import { createJarTransport } from '../src/transport';
@@ -17,12 +17,18 @@ test('LAN HTTP produces the same content identities as native SHA-256', async ()
       expect(await contentHash(text)).toBe(createHash('sha256').update(text).digest('hex'));
     }
     expect(await contentHash('same length A')).not.toBe(await contentHash('same length B'));
-    expect(uuid()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   } finally {Object.defineProperty(globalThis,'crypto',descriptor);}
 });
 
 test('native content hashing preserves the established identity', async()=>{
   expect(await contentHash('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+});
+
+test('byte hashing uses only the selected view and accepts shared-buffer input', async () => {
+  const expected = await contentHash('abc');
+  expect(await bytesHash(new Uint8Array([0, 97, 98, 99, 0]).subarray(1, 4))).toBe(expected);
+  const shared = new Uint8Array(new SharedArrayBuffer(5)); shared.set([0, 97, 98, 99, 0]);
+  expect(await bytesHash(shared.subarray(1, 4))).toBe(expected);
 });
 
 test('rejected character permission gives actionable guidance before preparing or sending a file',async()=>{
@@ -74,7 +80,7 @@ test('unsupported avatar formats are omitted with a warning before preview and i
   }
 });
 
-test('frontend UUID generation always goes through the LAN-compatible helper', async () => {
+test('sources do not use secure-context UUID generation', async () => {
   for await (const path of new Bun.Glob('**/*.ts').scan(fileURLToPath(new URL('../src', import.meta.url)))) {
     const source = await Bun.file(new URL(`../src/${path}`, import.meta.url)).text();
     expect(source).not.toMatch(/\brandomUUID\s*\(/);

@@ -1,3 +1,4 @@
+import { withHostUuid } from './host-uuid-fixture';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { CancelledError, createJarClient } from '../src/client';
 import type { JarRequest } from '../src/jar-adapter';
@@ -13,12 +14,13 @@ let registered: number;
 let send: ((payload: JarRequest) => void) | undefined;
 let clients: ReturnType<typeof createJarClient>[];
 
-function setup() {
-  const client = createJarClient({
+async function setup() {
+  const client = createJarClient(withHostUuid({
     sendToBackend(payload) { sent.push(structuredClone(payload) as JarRequest); send?.(payload as JarRequest); },
     onBackendMessage(handler) { registered++; listeners.add(handler); return () => { unsubscribed++; listeners.delete(handler); }; },
-  });
+  }));
   clients.push(client);
+  await client.ready; registered = clients.length; unsubscribed = 0;
   return client;
 }
 function emit(payload: unknown) { for (const listener of listeners) listener(payload); }
@@ -35,9 +37,39 @@ afterEach(() => {
   globalThis.setTimeout = originalSetTimeout; globalThis.clearTimeout = originalClearTimeout;
 });
 
+test('requests can be cancelled before the asynchronous host UUID arrives', async () => {
+  const client = createJarClient({
+    sendToBackend(payload) { sent.push(payload as JarRequest); },
+    onBackendMessage(handler) { listeners.add(handler); return () => { listeners.delete(handler); }; },
+  });
+  clients.push(client);
+  const first = rejected(client.request('list', 'http://127.0.0.1:4577'));
+  const second = rejected(client.request('connect', 'http://127.0.0.1:4577'));
+  expect((await first).name).toBe('AbortError');
+  client.cancel(); expect((await second).name).toBe('AbortError');
+  const uuidRequest = sent[0] as any;
+  emit({ type: 'jar_bridge:uuid:result', requestId: uuidRequest.requestId, uuid: '12345678-1234-4234-8234-123456789abc' });
+  await client.ready; expect(sent).toHaveLength(1); expect(timers.size).toBe(0);
+  const next = client.request('list', 'http://127.0.0.1:4577');
+  reply(sent[1], { captures: [] }); expect(await next).toEqual({ captures: [] });
+});
+
+test('closing while UUID initialization is pending rejects queued requests immediately', async () => {
+  const client = createJarClient({
+    sendToBackend(payload) { sent.push(payload as JarRequest); },
+    onBackendMessage(handler) { listeners.add(handler); return () => { listeners.delete(handler); }; },
+  });
+  clients.push(client);
+  const pending = rejected(client.request('list', 'http://127.0.0.1:4577'));
+  client.dispose();
+  expect((await pending).name).toBe('AbortError');
+  await expect(client.ready).rejects.toHaveProperty('name', 'AbortError');
+  expect(sent).toHaveLength(1); expect(listeners.size).toBe(0); expect(timers.size).toBe(0);
+});
+
 describe('JAR frontend requests settle only their own active response', () => {
   test('registers once, ignores unknown/mismatched/malformed messages, and settles a matching reply once', async () => {
-    const client = setup(); let settled = false;
+    const client = await setup(); let settled = false;
     const promise = client.request('list', 'http://127.0.0.1:4577').then(value => { settled = true; return value; });
     const request = sent[0];
     expect(registered).toBe(1); expect(listeners.size).toBe(1);
@@ -54,7 +86,7 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('replacing a request cancels the old ID and rejects it with a benign AbortError', async () => {
-    const client = setup();
+    const client = await setup();
     const first = rejected(client.request('connect', 'http://127.0.0.1:4577'));
     const old = sent[0];
     const second = client.request('card', 'http://127.0.0.1:9999', 'saved-card');
@@ -71,7 +103,7 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('cancel is repeatable and a later request remains usable with a new unique ID', async () => {
-    const client = setup(); const first = rejected(client.request('list', 'local')); const old = sent[0];
+    const client = await setup(); const first = rejected(client.request('list', 'local')); const old = sent[0];
     client.cancel(); client.cancel();
     expect((await first).name).toBe('AbortError'); expect(timers.size).toBe(0); expect(sent).toHaveLength(2);
     const next = client.request('connect', 'local'); const request = sent[2];
@@ -82,7 +114,7 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('times out after 90 seconds, cancels that backend job, and ignores a late reply', async () => {
-    const client = setup(); const error = rejected(client.request('list', 'local')); const request = sent[0];
+    const client = await setup(); const error = rejected(client.request('list', 'local')); const request = sent[0];
     expect([...timers.values()].map(timer => timer.delay)).toEqual([90_000]);
     [...timers.values()][0].callback();
     expect((await error).message).toContain('JAR Bridge did not reply'); expect((await error).message).toContain('Reload the extension'); expect(timers.size).toBe(0);
@@ -91,14 +123,14 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('disposal cancels, unregisters exactly once, and prevents further backend requests', async () => {
-    const client = setup(); const error = rejected(client.request('list', 'local'));
+    const client = await setup(); const error = rejected(client.request('list', 'local'));
     client.dispose(); client.dispose();
     expect((await error).name).toBe('AbortError'); expect(unsubscribed).toBe(1); expect(listeners.size).toBe(0); expect(timers.size).toBe(0);
     expect((await rejected(client.request('list', 'local'))).name).toBe('AbortError'); expect(sent).toHaveLength(2);
   });
 
   test('backend errors are control-free and bounded to 500 characters', async () => {
-    const client = setup(); const error = rejected(client.request('list', 'local')); const request = sent[0];
+    const client = await setup(); const error = rejected(client.request('list', 'local')); const request = sent[0];
     emit({ type: 'jar_bridge:response', id: request.id, command: 'list', error: `Fail\0\n\r${'x'.repeat(900)}` });
     const message = (await error).message;
     expect(message.length).toBeLessThanOrEqual(500); expect(message).toMatch(/^Fail {3}x/); expect(message).not.toMatch(/[\u0000-\u001f]/); expect(timers.size).toBe(0);
@@ -108,7 +140,7 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('transport send failures reject safely and cancellation still works when its send throws', async () => {
-    const client = setup(); send = () => { throw new Error('Secret transport details'); };
+    const client = await setup(); send = () => { throw new Error('Secret transport details'); };
     expect((await rejected(client.request('list', 'local'))).message).toBe('Could not send this request to the JAR bridge. Try again.'); expect(timers.size).toBe(0);
     send = undefined; const error = rejected(client.request('list', 'local'));
     send = () => { throw new Error('Unload'); }; expect(() => client.cancel()).not.toThrow();
@@ -116,14 +148,14 @@ describe('JAR frontend requests settle only their own active response', () => {
   });
 
   test('a synchronous native reply settles correctly, and separate clients cannot collide', async () => {
-    const first = setup(); const second = setup();
+    const first = await setup(); const second = await setup();
     send = request => { if (request.command === 'list') reply(request, { captures: [] }); };
     expect(await first.request('list', 'local')).toEqual({ captures: [] }); expect(await second.request('list', 'local')).toEqual({ captures: [] });
     expect(sent[0].id).not.toBe(sent[1].id); expect(timers.size).toBe(0); expect(registered).toBe(2);
   });
 
   test('linked conversation lists and selected history replies must match the selected record and chat', async () => {
-    const client = setup(); let settled = false;
+    const client = await setup(); let settled = false;
     const listed = client.request('conversations', 'local', 'record-1').then(result => { settled = true; return result; }); const listRequest = sent[0];
     reply(listRequest, { recordId: 'wrong', characterName: 'Name', conversations: [] }); await Promise.resolve(); expect(settled).toBe(false);
     const result = { recordId: 'record-1', characterName: 'Name', conversations: [] }; reply(listRequest, result); expect(await listed).toEqual(result);
@@ -142,7 +174,7 @@ const linkHistory = { recordId: 'record-1', chatId: '31415', characterName: 'Cha
 
 describe('explicit JanitorAI link client', () => {
   test('serializes a canonical URL only after an explicit requestLink call', async () => {
-    const client = setup(); expect(sent).toHaveLength(0);
+    const client = await setup(); expect(sent).toHaveLength(0);
     const promise = client.requestLink('http://127.0.0.1:4577', `${canonicalCharacter}-some-slug?track=private#fragment`);
     const request = sent[0];
     expect(request.command).toBe('preview-link'); expect(request.sourceUrl).toBe(canonicalCharacter); expect(request).not.toHaveProperty('recordId'); expect(request).not.toHaveProperty('chatId');
@@ -150,14 +182,14 @@ describe('explicit JanitorAI link client', () => {
     reply(request, result); expect(await promise).toEqual(result); expect(timers.size).toBe(0);
   });
   test('invalid links are rejected locally without sending any backend or cancel message', async () => {
-    const client = setup();
+    const client = await setup();
     for (const url of ['https://evil.example/chats/31415', 'https://user:PRIVATE@janitorai.com/chats/31415', 'https://janitorai.com/chats/31415%2fmessages%2f9']) {
       const error = await rejected(client.requestLink('local', url)); expect(error.message).toContain('JanitorAI'); expect(error.message).not.toContain('PRIVATE');
     }
     expect(sent).toHaveLength(0); expect(timers.size).toBe(0);
   });
   test('character-link results require the selected canonical identity, nested record identity, and card or guidance', async () => {
-    const client = setup(); let settled = false;
+    const client = await setup(); let settled = false;
     const promise = client.requestLink('local', canonicalCharacter).then(result => { settled = true; return result; }); const request = sent[0];
     const good = { kind: 'character', sourceUrl: canonicalCharacter, recordId: 'record-1', characterUrl: canonicalCharacter, card: linkCard };
     for (const result of [
@@ -170,7 +202,7 @@ describe('explicit JanitorAI link client', () => {
     reply(request, incomplete); expect(await promise).toEqual(incomplete);
   });
   test('chat results require sanitized history for the exact pasted chat even when a card is absent', async () => {
-    const client = setup(); let settled = false;
+    const client = await setup(); let settled = false;
     const promise = client.requestLink('local', `${canonicalChat}/messages/999`).then(result => { settled = true; return result; }); const request = sent[0];
     expect(request.sourceUrl).toBe(canonicalChat);
     const good = { kind: 'chat', sourceUrl: canonicalChat, recordId: 'record-1', characterUrl: canonicalCharacter, history: linkHistory };
@@ -183,7 +215,7 @@ describe('explicit JanitorAI link client', () => {
     reply(request, good); expect(await promise).toEqual(good); expect(timers.size).toBe(0);
   });
   test('replacing or closing a pasted-link preview cancels it and ignores late source data', async () => {
-    const client = setup(); const first = rejected(client.requestLink('local', canonicalCharacter)); const old = sent[0];
+    const client = await setup(); const first = rejected(client.requestLink('local', canonicalCharacter)); const old = sent[0];
     const next = rejected(client.requestLink('local', canonicalChat)); const current = sent[2];
     expect((await first).name).toBe('AbortError'); expect(sent[1]).toEqual({ type: 'jar_bridge:request', command: 'cancel', id: old.id });
     reply(old, { kind: 'character', sourceUrl: canonicalCharacter, recordId: 'record-1', card: linkCard });

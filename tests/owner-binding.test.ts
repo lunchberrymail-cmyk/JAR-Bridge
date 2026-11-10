@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createOwnerBinding, hasJarAccess } from '../src/owner-binding';
 import { createJarClient } from '../src/client';
+import { withHostUuid } from './host-uuid-fixture';
 import { setupJarBackend } from '../src/backend';
 
 const cleanups: (() => void)[] = [];
@@ -232,7 +233,8 @@ describe('shared Operator installations', () => {
 describe('owner proof delivery through the normal request client', () => {
   test('client acknowledges only one matching challenge for its active request', async () => {
     let receive!: (payload: unknown) => void; const sent: any[] = [];
-    const client = createJarClient({ onBackendMessage: callback => { receive = callback; return () => {}; }, sendToBackend: payload => { sent.push(payload); } } as any);
+    const client = createJarClient(withHostUuid({ onBackendMessage: callback => { receive = callback; return () => {}; }, sendToBackend: payload => { sent.push(payload); } } as any));
+    await client.ready;
     cleanups.push(() => client.dispose());
     receive({ type: 'jar_bridge:owner-challenge', id: 'unknown', command: 'connect', nonce: 'a'.repeat(64) }); expect(sent).toEqual([]);
     const result = client.request('connect', 'http://127.0.0.1:4577'); const request = sent[0];
@@ -247,7 +249,8 @@ describe('owner proof delivery through the normal request client', () => {
 
   test('cancelled/replaced request challenges never produce an acknowledgement', async () => {
     let receive!: (payload: unknown) => void; const sent: any[] = [];
-    const client = createJarClient({ onBackendMessage: callback => { receive = callback; return () => {}; }, sendToBackend: payload => { sent.push(payload); } } as any);
+    const client = createJarClient(withHostUuid({ onBackendMessage: callback => { receive = callback; return () => {}; }, sendToBackend: payload => { sent.push(payload); } } as any));
+    await client.ready;
     cleanups.push(() => client.dispose());
     const result = client.request('connect', 'http://127.0.0.1:4577'); const request = sent[0];
     client.cancel(); await expect(result).rejects.toHaveProperty('name', 'AbortError');
@@ -269,10 +272,11 @@ describe('owner proof delivery through the normal request client', () => {
     };
     cleanups.push(setupJarBackend(h.api));
     function createClient(user: string, session: string) {
-      const client = createJarClient({ onBackendMessage: callback => { frontend.set(`${user}\0${session}`, callback); return () => { frontend.delete(`${user}\0${session}`); }; }, sendToBackend: payload => backend(payload, user, session) } as any);
+      const client = createJarClient(withHostUuid({ onBackendMessage: callback => { frontend.set(`${user}\0${session}`, callback); return () => { frontend.delete(`${user}\0${session}`); }; }, sendToBackend: payload => backend(payload, user, session) } as any));
       cleanups.push(() => client.dispose()); return client;
     }
     const owner = createClient('alice', 'shared-document'); const otherAdmin = createClient('another-admin', 'shared-document');
+    await Promise.all([owner.ready, otherAdmin.ready]);
     const denied = otherAdmin.request('connect', 'http://127.0.0.1:4577'); await tick(); await tick();
     expect(network).toEqual([]); expect(h.writes).toEqual([]); expect(deliveries[0].user).toBe('alice');
     otherAdmin.cancel(); await expect(denied).rejects.toHaveProperty('name', 'AbortError');

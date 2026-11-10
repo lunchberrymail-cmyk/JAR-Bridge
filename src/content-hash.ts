@@ -18,7 +18,7 @@ export async function contentHash(text: string): Promise<string> {
 /** The same SHA-256 identity for raw bytes, such as a chosen card file. */
 export async function bytesHash(input: Uint8Array): Promise<string> {
   if (globalThis.crypto?.subtle) {
-    const digest = await crypto.subtle.digest('SHA-256', input);
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(input));
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   }
   // Plain HTTP LAN pages lack SubtleCrypto. Hash the same UTF-8 bytes so a

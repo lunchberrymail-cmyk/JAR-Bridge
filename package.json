@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build src/frontend.ts src/backend.ts --target browser --outdir dist --minify",
+    "typecheck": "tsc --project tsconfig.json",
+    "build": "bun build src/frontend.ts --target browser --outdir dist --minify && bun build src/backend.ts --target bun --outdir dist --minify",
     "test": "bun test tests"
   },
   "devDependencies": {
-    "jsdom": "29.1.1"
+    "jsdom": "29.1.1",
+    "lumiverse-spindle-types": "0.6.79",
+    "typescript": "7.0.2"
   }
 }

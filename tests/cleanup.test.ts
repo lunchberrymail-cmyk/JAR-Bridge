@@ -1,3 +1,4 @@
+import { withHostUuid } from './host-uuid-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { setupJarBackend } from '../src/backend';
@@ -95,7 +96,7 @@ describe('JAR cleanup', () => {
         const result = request.command === 'record-details' ? { records: request.recordIds.map((id: string) => ({ id, characterId: 'nova', conversations: 0, captured: id === 'n2' })) } : { deleted: request.recordIds, failed: [] };
         setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result }), 0); },
     };
-    const client = createJarClient(ctx); const deletedLists: string[][] = [];
+    const client = createJarClient(withHostUuid(ctx)); const deletedLists: string[][] = [];
     const ui = createCleanup({ client, getBaseUrl: () => 'http://localhost:4577', onBusy() {}, onDeleted: ids => deletedLists.push(ids) });
     document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
     const button = (text: string) => [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === text)!;

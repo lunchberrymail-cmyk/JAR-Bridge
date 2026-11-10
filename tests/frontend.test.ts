@@ -1,3 +1,4 @@
+import { withHostUuid } from './host-uuid-fixture';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { setup } from '../src/frontend';
@@ -17,7 +18,7 @@ beforeEach(() => {
 });
 function mount() {
   const root = document.createElement('section'); document.body.append(root);
-  return setup({
+  return setup(withHostUuid({
     dom: { addStyle: () => () => {} },
     ui: { registerDrawerTab: () => ({ root, onActivate: () => () => {}, destroy() { root.remove(); } }) },
     events: { on: () => () => {} },
@@ -35,7 +36,7 @@ function mount() {
       received({ type: 'jar_bridge:response', id: request.id, command: request.command,
         result: { kind: 'character', sourceUrl: request.sourceUrl, recordId: card.recordId, card } });
     },
-  } as any);
+  } as any));
 }
 afterEach(() => { destroy(); dom.window.close(); globalThis.document = originalDocument; });
 

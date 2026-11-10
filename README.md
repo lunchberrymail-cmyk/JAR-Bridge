@@ -18,7 +18,7 @@ A character card and a conversation are different things. Bring both to resume a
 
 ## Install
 
-Requires **Lumiverse 1.2.5 or later**. Install the repository through Lumiverse's Extensions window using:
+Requires **Lumiverse 1.3.0 or later**, including the host's `uuid-v1` and `frontend-session-routing-v1` capabilities. See [the platform audit](PLATFORM-AUDIT.md) for verified interfaces, validation, and remaining unsupported or unverified paths; the entire extension is not yet certified to use only supported interfaces. Install the repository through Lumiverse's Extensions window using:
 
 ```text
 https://github.com/lunchberrymail-cmyk/JAR-Bridge
@@ -153,4 +153,4 @@ bun test
 bun run build
 ```
 
-There are no runtime package dependencies. Source and prebuilt `dist/` bundles are included. The portable tests use synthetic data and mocked host APIs; they do not need a signed-in JAR or Lumiverse server. The importer has also been checked against JAR 0.4 and Lumiverse 1.2.5. Unfamiliar API responses fail with an error instead of creating an empty card/chat.
+There are no runtime package dependencies. Source and prebuilt `dist/` bundles are included. Run `bun run typecheck` to check production source against the pinned Spindle SDK. The portable tests use synthetic data and mocked host APIs; they do not need a signed-in JAR or Lumiverse server. Unfamiliar API responses fail with an error instead of creating an empty card/chat.

@@ -1,5 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
-import { uuid } from './uuid';
+import { requestHostUuid } from './uuid-client';
 import { isRecordId, type JarLinkResult, type JarRequest, type JarResponse } from './jar-adapter';
 import { characterPageUrl, parseJanitorLink, type JanitorLink } from './janitor-link';
 
@@ -101,13 +101,16 @@ function isCardResult(value: unknown, recordId?: string): boolean {
 
 /** One request per frontend document, with no archive state retained after settlement. */
 export function createJarClient(ctx: Context): {
+  ready: Promise<void>;
   request(command: Command, baseUrl: string, recordId?: string, chatId?: string, link?: JanitorLink, extras?: RequestExtras): Promise<Result>;
   requestLink(baseUrl: string, sourceUrl: string): Promise<JarLinkResult>;
   cancel(): void;
   dispose(): void;
 } {
-  const nonce = uuid();
-  const prefix = `jar-${++clientSequence}-${nonce}`;
+  const instance = ++clientSequence, initializationAbort = new AbortController();
+  let prefix: string | undefined, cancelWaiting: (() => void) | undefined;
+  const ready = requestHostUuid(ctx, initializationAbort.signal).then(nonce => { prefix = `jar-${instance}-${nonce}`; });
+  void ready.catch(() => { /* Requests report initialization errors through their existing UI path. */ });
   let sequence = 0;
   let active: Pending | undefined;
   let disposed = false;
@@ -125,6 +128,7 @@ export function createJarClient(ctx: Context): {
   }
 
   function cancel(): void {
+    const waiting = cancelWaiting; cancelWaiting = undefined; waiting?.();
     const pending = active;
     if (!pending || !detach(pending)) return;
     pending.reject(new CancelledError());
@@ -154,6 +158,21 @@ export function createJarClient(ctx: Context): {
   function request(command: Command, baseUrl: string, recordId?: string, chatId?: string, link?: JanitorLink, extras?: RequestExtras): Promise<Result> {
       if (disposed) return Promise.reject(new CancelledError());
       cancel();
+      if (!prefix) {
+        return new Promise<Result>((resolve, reject) => {
+          const cancelled = () => reject(new CancelledError());
+          cancelWaiting = cancelled;
+          void ready.then(() => {
+            if (cancelWaiting !== cancelled) return;
+            cancelWaiting = undefined;
+            if (disposed) { reject(new CancelledError()); return; }
+            request(command, baseUrl, recordId, chatId, link, extras).then(resolve, reject);
+          }, error => {
+            if (cancelWaiting !== cancelled) return;
+            cancelWaiting = undefined; reject(error);
+          });
+        });
+      }
       return new Promise<Result>((resolve, reject) => {
         const pending: Pending = {
           id: `${prefix}-${++sequence}`, command, recordId, chatId, link, extras, resolve, reject,
@@ -173,6 +192,7 @@ export function createJarClient(ctx: Context): {
   }
 
   return {
+    ready,
     request,
     requestLink(baseUrl, sourceUrl) {
       if (disposed) return Promise.reject(new CancelledError());
@@ -184,6 +204,7 @@ export function createJarClient(ctx: Context): {
     dispose() {
       if (disposed) return;
       disposed = true;
+      initializationAbort.abort();
       cancel();
       unsubscribe();
     },
