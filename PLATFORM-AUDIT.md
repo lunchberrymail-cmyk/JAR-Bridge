@@ -9,6 +9,7 @@ Baseline: staging `698fb3a`, extension version 0.8.0. Release version is unchang
 - Removed `src/uuid.ts`. Its only production caller was `src/client.ts`, which now obtains its request-ID UUID prefix from the official host API.
 - Added `src/uuid-client.ts` and `src/uuid-host.ts`; registered the UUID handler in the existing backend with cleanup.
 - Kept client construction synchronous and made UUID initialization asynchronous. Requests wait for initialization; replacing/cancelling/closing a pending request rejects immediately and does not send a late JAR job.
+- A failed UUID startup attempt is now discarded, so an explicit user retry requests a fresh official host UUID. Concurrent requests still share one pending initialization; cancellation, disposal and late-reply isolation remain intact. Timeout, send failure, invalid reply, host generation failure and explicitly unsupported host replies have distinct guidance. A timeout no longer claims the host lacks `uuid-v1`.
 - Pinned SDK 0.6.79 and updated the lockfile. Separated browser and Bun backend build targets and rebuilt both shipped bundles.
 - Updated regression fixtures for asynchronous host IDs and replaced the obsolete AGENTS UUID instruction.
 - Kept the 32-byte random ownership challenge in `owner-binding.ts`. It is a cryptographic token, not a UUID. Kept native/fallback content SHA-256 hashing in `content-hash.ts` for HTTP compatibility; hashing is not UUID generation.
@@ -57,12 +58,19 @@ All are under `/api/v1`.
 ## Validation
 
 - Build: passed; browser frontend and Bun backend rebuilt.
-- Full suite plus new regression coverage: **199 passed, 0 failed** (13 files).
+- Full suite plus new regression coverage: **202 passed, 0 failed** (13 files).
 - Strict TypeScript 7.0.2 against pinned SDK 0.6.79: **all production TypeScript passed** via `bun run typecheck`. Passing types is not certification of supported-interface compliance.
 - Upstream staging backend scanner, executed unchanged on the rebuilt backend: **no findings**, no opt-outs. This does not establish installation approval or all permission semantics.
 - Production source/shipped bundles: no custom UUID generator or randomUUID call; one official UUID v4 call in the backend. The remaining getRandomValues call is the 32-byte ownership challenge, including in dist/backend.js.
 - Tests cover UUID routing/missing support/no browser crypto/timeout/teardown, pending-initialization cancellation, ownership proof isolation and existing imports, lorebooks, permissions, cleanup and request handling.
 - Hash regressions verify the selected byte range and SharedArrayBuffer-backed input produce the same SHA-256 as native UTF-8 text hashing; the existing LAN HTTP cases also pass.
+- Follow-up UUID regressions verify recovery after startup timeout/send failure, rejection of a late response from the previous attempt, disposal while retrying, and update guidance only after an explicit unsupported-host response.
 - The local Lumiverse 1.3.0 checkout's existing UUID suite passed **4 tests / 158 assertions**, including actual worker/process transport.
 - Signed-in live test at `http://127.0.0.1:7860/`: backed up installed runtime files, deployed this manifest and both rebuilt bundles, restarted through the native Extensions UI, and reloaded. The import assistant opened normally. With JAR stopped, Check JAR connection returned the expected actionable connection failure. Started the existing local JAR on loopback for the test; the same check then reported **JAR 0.4.0 is running**. This exercises asynchronous host UUID initialization, document-targeted messaging, existing permissions and the supported backend CORS transport. No browser console errors were recorded. No archive import, JanitorAI login, capture or LLM request was performed; live import parity and mobile/LAN operation are not established by this smoke test.
 - git diff --check passed. Staging delivery is authorized; main and release versions remain unchanged.
+
+## Follow-up on the usual server
+
+The signed-in native Diagnostics UI at `lumiverse.lunchrelay.win` reported frontend/backend 1.3.0 and staging commit `68c0fa96`. A fresh JAR connection check passed UUID initialization and returned the existing JAR-network connection failure at the configured loopback address. Therefore, the originally reported generic UUID error does not establish missing host support on that server. The original failing browser session was not captured; its precise transport/startup trigger remains unverified. Code review did confirm that a rejected initialization promise previously poisoned all retries in the same client, and the regression tests above now cover that defect. No host restriction, permission check or UUID API was bypassed.
+
+The follow-up build also passed a signed-in local connection check against the existing JAR 0.4.0 server after replacing both bundles and restarting through the native Extensions UI. No browser console errors appeared. Timeout recovery itself is exercised deterministically by the regression test; the live check does not claim to reproduce the original browser's failure.

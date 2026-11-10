@@ -108,12 +108,22 @@ export function createJarClient(ctx: Context): {
   dispose(): void;
 } {
   const instance = ++clientSequence, initializationAbort = new AbortController();
-  let prefix: string | undefined, cancelWaiting: (() => void) | undefined;
-  const ready = requestHostUuid(ctx, initializationAbort.signal).then(nonce => { prefix = `jar-${instance}-${nonce}`; });
-  void ready.catch(() => { /* Requests report initialization errors through their existing UI path. */ });
+  let prefix: string | undefined, cancelWaiting: (() => void) | undefined, initialization: Promise<void> | undefined;
+  let disposed = false;
+  function initialize(): Promise<void> {
+    if (disposed) return Promise.reject(new CancelledError());
+    if (initialization) return initialization;
+    const attempt = requestHostUuid(ctx, initializationAbort.signal).then(nonce => { prefix = `jar-${instance}-${nonce}`; });
+    initialization = attempt;
+    void attempt.catch(() => {
+      // A disconnected or slow startup must not poison every later user retry.
+      if (initialization === attempt) initialization = undefined;
+    });
+    return attempt;
+  }
+  void initialize();
   let sequence = 0;
   let active: Pending | undefined;
-  let disposed = false;
 
   function detach(pending: Pending): boolean {
     if (active !== pending) return false;
@@ -162,7 +172,7 @@ export function createJarClient(ctx: Context): {
         return new Promise<Result>((resolve, reject) => {
           const cancelled = () => reject(new CancelledError());
           cancelWaiting = cancelled;
-          void ready.then(() => {
+          void initialize().then(() => {
             if (cancelWaiting !== cancelled) return;
             cancelWaiting = undefined;
             if (disposed) { reject(new CancelledError()); return; }
@@ -192,7 +202,7 @@ export function createJarClient(ctx: Context): {
   }
 
   return {
-    ready,
+    get ready() { return initialize(); },
     request,
     requestLink(baseUrl, sourceUrl) {
       if (disposed) return Promise.reject(new CancelledError());

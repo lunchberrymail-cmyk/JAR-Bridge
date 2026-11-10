@@ -67,6 +67,47 @@ test('closing while UUID initialization is pending rejects queued requests immed
   expect(sent).toHaveLength(1); expect(listeners.size).toBe(0); expect(timers.size).toBe(0);
 });
 
+test('a user retry obtains a new host UUID after a startup timeout and ignores the old reply', async () => {
+  const client = createJarClient({
+    sendToBackend(payload) { sent.push(payload as JarRequest); },
+    onBackendMessage(handler) { listeners.add(handler); return () => { listeners.delete(handler); }; },
+  });
+  clients.push(client);
+  const initial = sent[0] as any;
+  const first = rejected(client.request('check', 'http://127.0.0.1:4577'));
+  [...timers.values()].find(timer => timer.delay === 10_000)!.callback();
+  expect((await first).message).toContain('did not receive a host UUID reply');
+  expect(timers.size).toBe(0); expect(sent).toHaveLength(1);
+
+  const retry = client.request('check', 'http://127.0.0.1:4577');
+  const current = sent[1] as any;
+  expect(current.type).toBe('jar_bridge:uuid'); expect(current.requestId).not.toBe(initial.requestId);
+  emit({ type: 'jar_bridge:uuid:result', requestId: initial.requestId, uuid: '12345678-1234-4234-8234-123456789abc' });
+  await Promise.resolve(); expect(sent).toHaveLength(2);
+  emit({ type: 'jar_bridge:uuid:result', requestId: current.requestId, uuid: '87654321-1234-4234-8234-123456789abc' });
+  await client.ready; await Promise.resolve();
+  expect(sent).toHaveLength(3); expect(sent[2].id).toContain('87654321-1234-4234-8234-123456789abc');
+  reply(sent[2], { version: '0.4.0' }); expect(await retry).toEqual({ version: '0.4.0' });
+  expect(timers.size).toBe(0);
+});
+
+test('a failed host UUID send can recover, and closing a retry cannot send a late JAR job', async () => {
+  let offline = true;
+  const client = createJarClient({
+    sendToBackend(payload) { if (offline) throw Error('offline'); sent.push(payload as JarRequest); },
+    onBackendMessage(handler) { listeners.add(handler); return () => { listeners.delete(handler); }; },
+  });
+  clients.push(client);
+  await expect(client.ready).rejects.toThrow('could not contact');
+  offline = false;
+  const retry = rejected(client.request('check', 'http://127.0.0.1:4577'));
+  const current = sent[0] as any;
+  expect(current.type).toBe('jar_bridge:uuid');
+  client.dispose(); expect((await retry).name).toBe('AbortError');
+  emit({ type: 'jar_bridge:uuid:result', requestId: current.requestId, uuid: '12345678-1234-4234-8234-123456789abc' });
+  await Promise.resolve(); expect(sent).toHaveLength(1); expect(listeners.size).toBe(0); expect(timers.size).toBe(0);
+});
+
 describe('JAR frontend requests settle only their own active response', () => {
   test('registers once, ignores unknown/mismatched/malformed messages, and settles a matching reply once', async () => {
     const client = await setup(); let settled = false;
