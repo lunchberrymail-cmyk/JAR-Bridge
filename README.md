@@ -105,7 +105,7 @@ Capture and rebuild can take longer than Lumiverse's 30-second connection limit.
 
 ## Experimental: your JanitorAI login instead of JAR
 
-Under the link field, **Experimental: use your JanitorAI login instead of JAR** reads a character's public definition straight from JanitorAI, without JAR running. Paste your login once (the JanitorAI access token, or the whole `sb-…-auth-token` cookie value from your browser's developer tools; the panel explains where), choose **Save login**, then **Preview the link above with my JanitorAI login**. The card opens in the normal preview and imports the same way.
+Under the link field, **Experimental: use your JanitorAI login instead of JAR** reads a character's public definition straight from JanitorAI, without JAR running. To get your login, drag the panel's **Copy JanitorAI login** button to your bookmarks bar once; on janitorai.com, signed in, click that bookmark and it copies your login (only the `sb-…-auth-token` cookie pieces). Paste it in the panel and choose **Save login**. (You can also copy the `sb-auth-auth-token.0` and `.1` cookie values by hand from the browser's developer tools; the panel explains where.) Then choose then **Preview the link above with my JanitorAI login**. The card opens in the normal preview and imports the same way.
 
 - It only reads: it never sends messages or changes your JanitorAI account.
 - Only the short-lived access token is kept, encrypted in Lumiverse's per-user secret storage. It is never sent back to the browser, and **Forget** deletes it. It stops working after about an hour; paste a fresh one then.

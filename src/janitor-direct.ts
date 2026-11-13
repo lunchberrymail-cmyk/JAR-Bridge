@@ -26,13 +26,31 @@ export function tokenExpiry(token: string): number | undefined {
 function safeJson(value: string | undefined): unknown { try { return value === undefined ? undefined : JSON.parse(value); } catch { return undefined; } }
 
 /**
+ * `name=value; name=value` as copied by the bookmarklet (or from a Cookie header):
+ * the session cookie's chunks (`sb-…-auth-token`, `.0`, `.1`, …) joined in order.
+ * Sign-in leftovers such as `…-auth-token-code-verifier` are not session chunks.
+ */
+function joinCookieChunks(text: string): string | undefined {
+  const chunks = new Map<string, Map<number, string>>();
+  for (const pair of text.split(/;\s*/)) {
+    const match = /^(sb-[^=;\s]*-auth-token)(?:\.(\d{1,3}))?=(.*)$/.exec(pair.trim());
+    if (!match) continue;
+    const parts = chunks.get(match[1]) ?? new Map<number, string>();
+    parts.set(match[2] === undefined ? 0 : Number(match[2]), match[3]);
+    chunks.set(match[1], parts);
+  }
+  for (const parts of chunks.values()) return [...parts.entries()].sort((a, b) => a[0] - b[0]).map(([, value]) => value).join('');
+  return undefined;
+}
+
+/**
  * Accept what a user can copy from the browser: the access token itself, or the
  * `sb-…-auth-token` cookie value (`base64-…` encoded session JSON, possibly
  * URL-encoded). Only the access token is kept; a refresh token is discarded.
  */
 export function accessTokenFrom(input: unknown): string {
   if (typeof input !== 'string' || !input.trim() || input.length > MAX_INPUT) throw new Error('Paste your JanitorAI access token or the sb-…-auth-token cookie value.');
-  let raw = input.trim().replace(/^bearer\s+/i, '');
+  let raw = joinCookieChunks(input.trim()) ?? input.trim().replace(/^bearer\s+/i, '');
   try { raw = decodeURIComponent(raw); } catch { /* keep as pasted */ }
   if (isJwt(raw)) return raw;
   for (const text of [raw.startsWith('base64-') ? base64Url(raw.slice(7)) : undefined, raw]) {

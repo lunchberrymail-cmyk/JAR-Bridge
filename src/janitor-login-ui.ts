@@ -13,6 +13,12 @@ export interface JanitorLoginOptions {
   onCard: (card: JarCardResult) => void;
 }
 
+/** Bookmark code: on janitorai.com, copy only the `sb-…-auth-token` cookie pieces. */
+export const BOOKMARKLET = "javascript:(()=>{const p=document.cookie.split('; ').filter(c=>/^sb-[^=]*-auth-token(\\.\\d+)?=/.test(c));"
+  + "if(!/(^|\\.)janitorai\\.com$/.test(location.hostname)||!p.length){alert('Open janitorai.com, sign in, then click this bookmark again.');return}"
+  + "const t=p.join('; ');navigator.clipboard.writeText(t).then(()=>alert('Your JanitorAI login is copied. Paste it into JAR Bridge.'),"
+  + "()=>prompt('Copy your JanitorAI login, then paste it into JAR Bridge:',t))})()";
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; }
 function button(text: string, click: () => void, cls = 'jar-button') { const node = el('button', cls, text); node.type = 'button'; node.addEventListener('click', click); return node; }
 function isAbort(error: unknown) { return error instanceof Error && error.name === 'AbortError'; }
@@ -31,11 +37,24 @@ export function createJanitorLogin(options: JanitorLoginOptions) {
   how.append(el('summary', '', 'How to get your login'));
   const steps = el('ol', 'jar-guide-tutorial');
   for (const step of [
-    'Open janitorai.com in your browser, signed in.',
-    'Press F12, then open Application (Chrome, Edge) or Storage (Firefox) → Cookies → https://janitorai.com.',
-    'Copy the value of the cookie named sb-…-auth-token. If it is split into …-auth-token.0 and …-auth-token.1, copy both values one after the other.',
+    'Drag the “Copy JanitorAI login” button below to your browser’s bookmarks bar. You only do this once.',
+    'On janitorai.com, signed in, click that bookmark. It copies your login.',
+    'Come back here, paste it in the box below, then choose Save login.',
   ]) steps.append(el('li', 'jar-help', step));
-  how.append(steps, el('p', 'jar-help jar-guide-note', 'This is a key to your JanitorAI account. Paste it only here and never share it. Lumiverse keeps it encrypted; it stops working after about an hour, and Forget removes it.'));
+  // Dragged to the bookmarks bar, this runs on janitorai.com and copies only the
+  // session cookie's pieces. Clicked here, it does nothing.
+  const bookmarklet = el('a', 'jar-button jar-bookmarklet', 'Copy JanitorAI login');
+  bookmarklet.href = BOOKMARKLET; bookmarklet.draggable = true; bookmarklet.title = 'Drag me to your bookmarks bar';
+  bookmarklet.addEventListener('click', event => { event.preventDefault(); message('Drag this button to your bookmarks bar, then click the bookmark on janitorai.com.'); });
+  const manual = el('details', 'jar-address-details');
+  manual.append(el('summary', '', 'Can’t use a bookmark? Copy it by hand'));
+  const manualSteps = el('ol', 'jar-guide-tutorial');
+  for (const step of [
+    'On janitorai.com, signed in, press F12. Open Storage (Firefox: Stockage) or Application (Chrome, Edge), then Cookies → https://janitorai.com.',
+    'Copy the value of sb-auth-auth-token.0 and paste it below, then copy the value of sb-auth-auth-token.1 and paste it right after, with nothing in between. Ignore the …-flow-… and …-code-verifier cookies.',
+  ]) manualSteps.append(el('li', 'jar-help', step));
+  manual.append(manualSteps);
+  how.append(steps, bookmarklet, manual, el('p', 'jar-help jar-guide-note', 'This is a key to your JanitorAI account. Paste it only here and never share it. Lumiverse keeps it encrypted; it stops working after about an hour, and Forget removes it.'));
   const field = el('label', 'jar-field');
   const input = el('input', 'jar-input'); input.type = 'password'; input.autocomplete = 'off'; input.spellcheck = false; input.placeholder = 'Paste your JanitorAI login';
   field.append(el('span', 'jar-label', 'JanitorAI login'), input);

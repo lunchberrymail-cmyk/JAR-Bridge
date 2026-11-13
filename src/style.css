@@ -182,3 +182,4 @@
 .jar-direct > summary { color:#bfa9d4; font-size:12px; cursor:pointer; }
 .jar-direct .jar-field { margin-top:10px; }
 .jar-direct > .jar-button { margin-top:8px; }
+.jar-bookmarklet { display:inline-block; margin:6px 0 4px; text-decoration:none; cursor:grab; }
