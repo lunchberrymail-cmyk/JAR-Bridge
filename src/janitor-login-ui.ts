@@ -37,15 +37,17 @@ export function createJanitorLogin(options: JanitorLoginOptions) {
   how.append(el('summary', '', 'How to get your login'));
   const steps = el('ol', 'jar-guide-tutorial');
   for (const step of [
-    'Drag the “Copy JanitorAI login” button below to your browser’s bookmarks bar. You only do this once.',
-    'On janitorai.com, signed in, click that bookmark. It copies your login.',
+    'Click “Copy bookmark code” below. (If your browser shows a bookmarks bar, you can drag the button onto it instead.)',
+    'In Firefox, open the Bookmarks menu → Manage bookmarks (Ctrl+Shift+O). Right-click a folder → Add Bookmark. Paste the code into the URL field, name it “Copy JanitorAI login”, and Save.',
+    'On janitorai.com, signed in, open your Bookmarks and click it. It copies your login.',
     'Come back here, paste it in the box below, then choose Save login.',
   ]) steps.append(el('li', 'jar-help', step));
-  // Dragged to the bookmarks bar, this runs on janitorai.com and copies only the
-  // session cookie's pieces. Clicked here, it does nothing.
-  const bookmarklet = el('a', 'jar-button jar-bookmarklet', 'Copy JanitorAI login');
-  bookmarklet.href = BOOKMARKLET; bookmarklet.draggable = true; bookmarklet.title = 'Drag me to your bookmarks bar';
-  bookmarklet.addEventListener('click', event => { event.preventDefault(); message('Drag this button to your bookmarks bar, then click the bookmark on janitorai.com.'); });
+  // On a browser with a bookmarks bar this drags there and, on janitorai.com, copies
+  // only the session cookie's pieces. In the desktop app, clicking copies the same
+  // code so it can be pasted into a new bookmark by hand.
+  const bookmarklet = el('a', 'jar-button jar-bookmarklet', 'Copy bookmark code');
+  bookmarklet.href = BOOKMARKLET; bookmarklet.draggable = true; bookmarklet.title = 'Drag me to a bookmarks bar, or click to copy the code';
+  bookmarklet.addEventListener('click', event => { event.preventDefault(); void copyText(BOOKMARKLET, 'Bookmark code copied. In Firefox, make a new bookmark and paste it into the URL field, then click the bookmark on janitorai.com.'); });
   const manual = el('details', 'jar-address-details');
   manual.append(el('summary', '', 'Can’t use a bookmark? Copy it by hand'));
   const manualSteps = el('ol', 'jar-guide-tutorial');
@@ -74,6 +76,11 @@ export function createJanitorLogin(options: JanitorLoginOptions) {
     return `Signed in as ${value.account || 'your JanitorAI account'}${minutes !== undefined ? ` · expires in ${minutes < 1 ? 'under a minute' : `${minutes} min`}` : ''}.`;
   }
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
+  /** Copy to clipboard where allowed; otherwise show the text so it can be copied by hand. */
+  async function copyText(text: string, done: string): Promise<void> {
+    try { await navigator.clipboard?.writeText(text); message(done, 'success'); }
+    catch { try { globalThis.prompt?.('Copy this, then paste it into a new Firefox bookmark’s URL field:', text); } catch { /* no prompt */ } message('Copy the code shown, then paste it into a new Firefox bookmark’s URL field.', 'warning'); }
+  }
   function hasLink() { try { return parseJanitorLink(options.getLink()).kind === 'character'; } catch { return false; } }
   function render() {
     if (disposed) return;
