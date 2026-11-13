@@ -7,12 +7,13 @@ import { characterPageUrl, parseJanitorLink } from './janitor-link';
 import { createOwnerBinding, hasJarAccess } from './owner-binding';
 import { createLinkIndex } from './link-index';
 import { registerUuidHost } from './uuid-host';
+import { createJanitorDirect } from './janitor-direct';
 
 type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
 const requestChannel = 'jar_bridge:request';
 const responseChannel = 'jar_bridge:response';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details']);
+const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details', 'direct-save', 'direct-status', 'direct-clear', 'direct-preview']);
 /** Lumiverse entity IDs are opaque; accept only short route-safe tokens. */
 function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -49,6 +50,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   // The JAR record remembered for each character link, reused after checking it
   // still holds that link. JAR's list omits source IDs; unrelated records are never read.
   const linkIndex = createLinkIndex(api);
+  // Experimental JAR-free reads with the user's own JanitorAI login.
+  const direct = createJanitorDirect(api);
   // Earlier JAR record holding a closed-lorebook capture for a previewed record.
   const captureTargets = new Map<string, string>();
   let disposed = false;
@@ -106,6 +109,18 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           const worldBookIds = Array.isArray(updated?.world_book_ids) ? updated.world_book_ids.filter(id => typeof id === 'string') : [];
           if (!worldBookIds.includes(request.worldBookId)) throw new Error('Lumiverse did not confirm the attachment. Check the character’s lorebooks before retrying.');
           if (current()) reply({ result: { characterId: request.characterId, worldBookIds } });
+          return;
+        }
+        if (command === 'direct-save' || command === 'direct-status' || command === 'direct-clear' || command === 'direct-preview') {
+          // JanitorAI is reached through Lumiverse's CORS proxy; JAR is not involved.
+          const granted = await api.permissions.getGranted();
+          if (!current()) return;
+          if (!granted.includes('cors_proxy')) throw new Error('Allow Local JAR connection (the CORS proxy) in this extension’s permissions, then try again.');
+          const result = command === 'direct-save' ? await direct.save(request.token, userId)
+            : command === 'direct-status' ? await direct.status(userId)
+              : command === 'direct-clear' ? await direct.clear(userId)
+                : await direct.preview(request.sourceUrl, userId);
+          if (current()) reply({ result });
           return;
         }
         if (request.baseUrl !== undefined && typeof request.baseUrl !== 'string') throw new Error('Enter a local JAR address.');

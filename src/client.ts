@@ -6,7 +6,7 @@ import { characterPageUrl, parseJanitorLink, type JanitorLink } from './janitor-
 type Command = Exclude<JarRequest['command'], 'cancel'>;
 type Result = JarResponse['result'];
 type Context = Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>;
-export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId' | 'trigger' | 'recordIds'>;
+export type RequestExtras = Pick<JarRequest, 'force' | 'characterId' | 'worldBookId' | 'trigger' | 'recordIds' | 'token'>;
 type Pending = {
   id: string;
   command: Command;
@@ -46,6 +46,12 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
   if (pending.command === 'list') return Array.isArray(result.captures);
   if (pending.command === 'conversations') return result.recordId === pending.recordId && typeof result.characterName === 'string' && Array.isArray(result.conversations);
   if (pending.command === 'history') return result.recordId === pending.recordId && result.chatId === pending.chatId && typeof result.jsonl === 'string' && typeof result.characterName === 'string' && typeof result.userName === 'string' && typeof result.messageCount === 'number';
+  if (pending.command === 'direct-preview') return isCardResult(result) && typeof result.recordId === 'string' && /^jai-[0-9a-f-]{36}$/.test(result.recordId);
+  if (pending.command === 'direct-save' || pending.command === 'direct-status' || pending.command === 'direct-clear') {
+    return typeof result.saved === 'boolean' && (result.expiresAt === undefined || typeof result.expiresAt === 'number')
+      && (result.expired === undefined || typeof result.expired === 'boolean') && (result.account === undefined || typeof result.account === 'string')
+      && !('token' in result);
+  }
   if (pending.command === 'preview-link') {
     const link = pending.link;
     if (!link || result.kind !== link.kind || result.sourceUrl !== link.sourceUrl || !isRecordId(result.recordId)) return false;
@@ -194,7 +200,7 @@ export function createJarClient(ctx: Context): {
         };
         active = pending;
         try {
-          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}), ...(extras?.trigger !== undefined ? { trigger: extras.trigger } : {}), ...(extras?.recordIds !== undefined ? { recordIds: extras.recordIds } : {}) } satisfies JarRequest);
+          ctx.sendToBackend({ type: 'jar_bridge:request', id: pending.id, command, baseUrl, ...(recordId !== undefined ? { recordId } : {}), ...(chatId !== undefined ? { chatId } : {}), ...(link ? { sourceUrl: link.sourceUrl } : {}), ...(extras?.force === true ? { force: true } : {}), ...(extras?.characterId !== undefined ? { characterId: extras.characterId } : {}), ...(extras?.worldBookId !== undefined ? { worldBookId: extras.worldBookId } : {}), ...(extras?.trigger !== undefined ? { trigger: extras.trigger } : {}), ...(extras?.recordIds !== undefined ? { recordIds: extras.recordIds } : {}), ...(extras?.token !== undefined ? { token: extras.token } : {}) } satisfies JarRequest);
         } catch {
           if (detach(pending)) reject(new Error('Could not send this request to the JAR bridge. Try again.'));
         }

@@ -103,6 +103,15 @@ A closed lorebook is one its creator chose not to share, and automated capture m
 
 Capture and rebuild can take longer than Lumiverse's 30-second connection limit. JAR keeps working after the connection closes, so the importer checks the character's JAR record every few seconds for up to 10 minutes. **Stop waiting** stops checking; JAR may still finish, and **Check JAR for lorebooks** reads the result later.
 
+## Experimental: your JanitorAI login instead of JAR
+
+Under the link field, **Experimental: use your JanitorAI login instead of JAR** reads a character's public definition straight from JanitorAI, without JAR running. Paste your login once (the JanitorAI access token, or the whole `sb-…-auth-token` cookie value from your browser's developer tools; the panel explains where), choose **Save login**, then **Preview the link above with my JanitorAI login**. The card opens in the normal preview and imports the same way.
+
+- It only reads: it never sends messages or changes your JanitorAI account.
+- Only the short-lived access token is kept, encrypted in Lumiverse's per-user secret storage. It is never sent back to the browser, and **Forget** deletes it. It stops working after about an hour; paste a fresh one then.
+- Requests come from your Lumiverse server through its CORS proxy. JanitorAI may refuse or flag them; the panel says so if it blocks a request.
+- Hidden definitions, closed lorebooks and chat histories still need JAR. Lorebooks are not offered for cards read this way yet.
+
 ## Phone or tablet without JAR
 
 Use **Help and import guide → Phone or tablet · card file**. The guide links to [JannyAI](https://jannyai.com/) and [DataCat](https://datacat.run/) as character-card download alternatives, depending on availability and the creator's settings. Download an actual card, then return to **Import card file**.

@@ -34,6 +34,8 @@ export interface JarCardResult {
   /** The JanitorAI character page this card came from, when JAR knows it. */
   sourceUrl?: string;
 }
+/** The saved JanitorAI login, described without the token itself. */
+export interface DirectStatus { saved: boolean; expiresAt?: number; expired?: boolean; account?: string }
 export interface JarDeleteResult { deleted: string[]; failed: string[] }
 /** What cleanup needs to tell copies of one character apart; never the captured content. */
 export interface JarRecordDetail { id: string; characterId: string; conversations: number; captured: boolean }
@@ -50,7 +52,8 @@ export interface JarLinkResult {
   hiddenCard?: true;
 }
 export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
-  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'record-details' | 'cancel';
+  | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'record-details'
+  | 'direct-save' | 'direct-status' | 'direct-clear' | 'direct-preview' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;
@@ -59,11 +62,13 @@ export interface JarRequest {
   trigger?: unknown;
   /** JAR records to delete from JAR (never from Lumiverse). */
   recordIds?: string[];
+  /** A pasted JanitorAI login, sent once to be checked and stored; never returned. */
+  token?: string;
 }
 export interface JarResponse {
   type: 'jar_bridge:response'; id: string; command: Exclude<JarCommand, 'cancel'>;
   result?: { version: string } | { version: string; captures: JarSummary[] } | { captures: JarSummary[] } | JarCardResult | JarConversationsResult | JarHistoryResult | JarLinkResult
-    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] } | JarDeleteResult | JarRecordDetails;
+    | JarLorebooksResult | JarLorebookAction | { characterId: string; worldBookIds: string[] } | JarDeleteResult | JarRecordDetails | DirectStatus;
   error?: string;
 }
 

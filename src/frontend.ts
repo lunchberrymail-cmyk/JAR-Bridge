@@ -10,6 +10,7 @@ import { createChatHistory, type HistoryStart } from './chats-ui';
 import { createImportGuide } from './import-guide';
 import { createLorebooks } from './lorebooks-ui';
 import { createCleanup } from './cleanup-ui';
+import { createJanitorLogin } from './janitor-login-ui';
 import { bytesHash } from './content-hash';
 import { characterPageUrl, parseJanitorLink, withSourceNote } from './janitor-link';
 import type { JarHistoryResult } from './conversation-adapter';
@@ -86,7 +87,7 @@ export function setup(ctx: SpindleFrontendContext) {
   const sourceLink = el('input', 'jar-input'); sourceLink.id = 'jar-source-link'; sourceLink.type = 'url'; sourceLink.maxLength = 2048; sourceLink.autocomplete = 'off'; sourceLink.spellcheck = false; sourceLink.placeholder = 'https://janitorai.com/characters/… or /chats/…';
   sourceField.append(el('span', 'jar-label', 'JanitorAI character or chat link'), sourceLink);
   const loadLink = button('Preview link', () => { void previewLink(); }, 'jar-button jar-primary');
-  sourceLink.addEventListener('input', updateControls); sourceLink.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void previewLink(); } });
+  sourceLink.addEventListener('input', () => { updateControls(); janitorLogin.refresh(); }); sourceLink.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void previewLink(); } });
   const clearLink = button('Clear', () => { if (disposed || busy) return; generation++; client.cancel(); sourceLink.value = ''; resetSelection(); message(''); updateControls(); sourceLink.focus({ preventScroll: true }); }, 'jar-button');
   clearLink.setAttribute('aria-label', 'Clear the link field');
   const sourceRow = el('div', 'jar-connect'); sourceRow.append(sourceField, loadLink, clearLink);
@@ -174,6 +175,16 @@ export function setup(ctx: SpindleFrontendContext) {
     onNavigate: () => window?.dismiss(),
   });
   const guide = createImportGuide({ start: next => switchMode(next) });
+  const janitorLogin = createJanitorLogin({ client, getLink: () => sourceLink.value,
+    onBusy: value => { busy = value; updateControls(); renderList(); },
+    onCard: card => {
+      if (disposed || mode !== 'archive') return;
+      generation++; resetSelection();
+      selected = withSource(card, characterPageUrl(sourceLink.value)); restoreOutcome(); renderPreview();
+      message(uncertain ? 'An earlier import could not be confirmed. Check your character library before retrying.' : imported ? 'This character is already imported.' : 'Read with your JanitorAI login. Review the card, then choose Import to Lumiverse.');
+      updateControls(); previewName.focus({ preventScroll: true }); preview.scrollIntoView?.({ block: 'start', behavior: 'auto' });
+    } });
+  linkPanel.append(janitorLogin.root);
   const lorebooks = createLorebooks(ctx, { client, getBaseUrl: () => address.value.trim(), onBusy: value => { busy = value; updateControls(); renderList(); },
     // JAR saves each capture as its own record. Load the recovered card from it
     // directly: previewing the link again would make JAR add another record.
@@ -192,6 +203,8 @@ export function setup(ctx: SpindleFrontendContext) {
   /** Lorebooks belong to the previewed JAR record; reading them never captures anything. */
   function syncLorebooks() {
     if (disposed || busy || mode !== 'archive') return;
+    // Cards read with the JanitorAI login have no JAR record to look lorebooks up in.
+    if (selected?.recordId.startsWith('jai-')) return;
     if (selected) { lorebooks.show(selected.recordId); lorebooks.setCharacter(imported); } else if (hiddenRecordId) lorebooks.show(hiddenRecordId, true);
   }
 
@@ -238,7 +251,8 @@ export function setup(ctx: SpindleFrontendContext) {
     status.hidden = guideVisible || mode === 'history' || !status.textContent;
     preview.hidden = guideVisible || mode === 'history' || !selected;
     cleanup.setBusy(busy); cleanupToggle.disabled = busy; cleanupToggle.textContent = cleanup.open ? 'Done cleaning up' : 'Clean up JAR…';
-    lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !(selected || hiddenRecordId);
+    janitorLogin.setBusy(busy);
+    lorebooks.setBusy(busy); lorebooks.root.hidden = guideVisible || mode !== 'archive' || !(selected || hiddenRecordId) || !!selected?.recordId.startsWith('jai-');
     continueHistory.hidden = !returnToHistory || !connected; continueHistory.disabled = busy;
     root.setAttribute('aria-busy', String(busy));
   }
@@ -408,5 +422,5 @@ export function setup(ctx: SpindleFrontendContext) {
   if (firstVisit) showGuide();
   const stopOpen = ctx.events.on('jar_bridge:open_import', openWindow);
   const stopActivation = tab.onActivate(openWindow);
-  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); cleanup.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
+  return () => { disposed = true; generation++; abort.abort(); stopOpen(); stopActivation(); window?.dismiss(); guide.destroy(); chatHistory.destroy(); lorebooks.destroy(); cleanup.destroy(); janitorLogin.destroy(); client.dispose(); tab.destroy(); removeStyle(); };
 }
