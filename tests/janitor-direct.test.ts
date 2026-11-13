@@ -29,8 +29,21 @@ describe('pasted JanitorAI login', () => {
     expect(accessTokenFrom(`base64-${b64url(session)}`)).toBe(token);
     expect(accessTokenFrom(encodeURIComponent(`base64-${b64url(session)}`))).toBe(token);
     expect(accessTokenFrom(session)).toBe(token);
-    for (const bad of ['', 'password123', 'eyJ.notajwt', 'x'.repeat(40_000), 42]) expect(() => accessTokenFrom(bad)).toThrow();
+    for (const bad of ['', 'password123', 'eyJ.notajwt', 'x'.repeat(70_000), 42]) expect(() => accessTokenFrom(bad)).toThrow();
     expect(tokenExpiry(jwt(1_900_000_000))).toBe(1_900_000_000);
+  });
+
+  test('reads the Bearer token from a pasted Copy as cURL, or its cookie header, without leaking anything else', () => {
+    const token = jwt();
+    const encoded = `base64-${b64url(JSON.stringify({ access_token: token, refresh_token: 'PRIVATE_REFRESH' }))}`;
+    const curl = `curl 'https://janitorai.com/hampter/characters/${id}' -X GET -H 'accept: application/json'`
+      + ` -H 'authorization: Bearer ${token}' -H 'cookie: __cf_bm=PRIVATE_CF; sb-auth-auth-token.0=PRIVATE0; sb-auth-auth-token.1=PRIVATE1' --compressed`;
+    expect(accessTokenFrom(curl)).toBe(token);
+    expect(accessTokenFrom(curl)).not.toContain('PRIVATE');
+    // Windows double-quoted cURL with no authorization header falls back to the cookie chunks.
+    const cookieOnly = `curl "https://janitorai.com/" -H "accept: */*" -H "cookie: cf_clearance=PRIVATE; sb-auth-auth-token.1=${encoded.slice(40)}; sb-auth-auth-token.0=${encoded.slice(0, 40)}"`;
+    expect(accessTokenFrom(cookieOnly)).toBe(token);
+    expect(accessTokenFrom(cookieOnly)).not.toContain('PRIVATE_REFRESH');
   });
 
   test('maps JanitorAI fields to a card and refuses a hidden definition', () => {
@@ -152,31 +165,5 @@ describe('JanitorAI login panel', () => {
     expect(requests[2]).toMatchObject({ command: 'direct-preview', sourceUrl: `https://janitorai.com/characters/${id}` });
     expect(requests[2].token).toBeUndefined();
     expect(cards).toHaveLength(1);
-  });
-});
-
-describe('copy-login bookmarklet', () => {
-  async function runBookmarklet(hostname: string, cookie: string) {
-    const { BOOKMARKLET } = await import('../src/janitor-login-ui');
-    let copied: string | undefined; const alerts: string[] = [];
-    const run = new Function('document', 'location', 'navigator', 'alert', 'prompt', BOOKMARKLET.replace(/^javascript:/, ''));
-    run({ cookie }, { hostname }, { clipboard: { writeText: async (text: string) => { copied = text; } } }, (text: string) => alerts.push(text), () => null);
-    await wait(); await wait();
-    return { copied, alerts };
-  }
-  test('on janitorai.com it copies only the session cookie pieces, which the bridge then reads', async () => {
-    const token = jwt();
-    const encoded = `base64-${b64url(JSON.stringify({ access_token: token, refresh_token: 'PRIVATE_REFRESH' }))}`;
-    const cookie = [`__cf_bm=PRIVATE_CF`, `cf_clearance=PRIVATE_CLEARANCE`, `sb-auth-auth-token-flow-febd6bb71=PRIVATE_FLOW`,
-      `sb-auth-auth-token-flows-code-verifier=PRIVATE_VERIFIER`, `sb-auth-auth-token.1=${encoded.slice(40)}`, `sb-auth-auth-token.0=${encoded.slice(0, 40)}`, 'statsig_sid=x'].join('; ');
-    const { copied, alerts } = await runBookmarklet('janitorai.com', cookie);
-    expect(copied).toBe(`sb-auth-auth-token.1=${encoded.slice(40)}; sb-auth-auth-token.0=${encoded.slice(0, 40)}`);
-    expect(copied).not.toContain('PRIVATE_');
-    expect(alerts[0]).toContain('copied');
-    expect(accessTokenFrom(copied!)).toBe(token);
-  });
-  test('anywhere else, or signed out, it copies nothing', async () => {
-    expect((await runBookmarklet('evil.example', 'sb-auth-auth-token.0=x')).copied).toBeUndefined();
-    expect((await runBookmarklet('janitorai.com', 'cf_clearance=x')).copied).toBeUndefined();
   });
 });

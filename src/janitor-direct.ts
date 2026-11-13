@@ -12,7 +12,7 @@ import { parseJanitorLink } from './janitor-link';
 const ORIGIN = 'https://janitorai.com';
 const AVATAR_ORIGIN = 'https://ella.janitorai.com/bot-avatars/';
 const TOKEN_KEY = 'janitorai_access_token';
-const MAX_INPUT = 32_768;
+const MAX_INPUT = 65_536;
 
 function base64Url(value: string): string | undefined {
   try { return atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')); } catch { return undefined; }
@@ -43,14 +43,9 @@ function joinCookieChunks(text: string): string | undefined {
   return undefined;
 }
 
-/**
- * Accept what a user can copy from the browser: the access token itself, or the
- * `sb-…-auth-token` cookie value (`base64-…` encoded session JSON, possibly
- * URL-encoded). Only the access token is kept; a refresh token is discarded.
- */
-export function accessTokenFrom(input: unknown): string {
-  if (typeof input !== 'string' || !input.trim() || input.length > MAX_INPUT) throw new Error('Paste your JanitorAI access token or the sb-…-auth-token cookie value.');
-  let raw = joinCookieChunks(input.trim()) ?? input.trim().replace(/^bearer\s+/i, '');
+/** The raw-token and decoded-session forms, returning undefined instead of throwing. */
+function fromRaw(input: string): string | undefined {
+  let raw = input.replace(/^bearer\s+/i, '');
   try { raw = decodeURIComponent(raw); } catch { /* keep as pasted */ }
   if (isJwt(raw)) return raw;
   for (const text of [raw.startsWith('base64-') ? base64Url(raw.slice(7)) : undefined, raw]) {
@@ -58,7 +53,29 @@ export function accessTokenFrom(input: unknown): string {
     const token = session.access_token ?? object(session.currentSession).access_token;
     if (isJwt(token)) return token;
   }
-  throw new Error('That does not look like a JanitorAI login. Paste the access token (starting with eyJ) or the whole sb-…-auth-token cookie value.');
+  return undefined;
+}
+
+/**
+ * Accept what a user can copy from the browser:
+ *  - a "Copy as cURL" command or request headers — the request's own Bearer token
+ *    is the access token, with its Cookie header as a fallback;
+ *  - the access token itself, or the whole `sb-…-auth-token` cookie value(s).
+ * Only the access token is kept; any refresh token is discarded.
+ */
+export function accessTokenFrom(input: unknown): string {
+  if (typeof input !== 'string' || !input.trim() || input.length > MAX_INPUT) throw new Error('Paste your JanitorAI login — the “Copy as cURL” from your browser, or the access token.');
+  const text = input.trim();
+  // The API request's own bearer token is the access token: the most reliable source.
+  const bearer = /authorization:\s*bearer\s+(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/i.exec(text);
+  if (bearer && isJwt(bearer[1])) return bearer[1];
+  // Otherwise its Cookie header, a pasted cookie list, or a raw token/session.
+  const cookieHeader = /(['"])cookie:\s*([^'"]*)\1/i.exec(text);
+  for (const candidate of [cookieHeader ? joinCookieChunks(cookieHeader[2]) : undefined, joinCookieChunks(text), text]) {
+    const token = candidate ? fromRaw(candidate) : undefined;
+    if (token) return token;
+  }
+  throw new Error('That does not look like a JanitorAI login. In your browser’s Network tab, right-click a janitorai.com request, choose Copy as cURL, and paste it here.');
 }
 
 function apiError(status: number, body: string, contentType: string): Error {
