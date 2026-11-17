@@ -1,6 +1,6 @@
 {
   "name": "lumiverse-jar-bridge",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,8 +9,10 @@
     "test": "bun test tests"
   },
   "devDependencies": {
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
     "jsdom": "29.1.1",
     "lumiverse-spindle-types": "0.6.79",
+    "quickjs-emscripten-core": "0.32.0",
     "typescript": "7.0.2"
   }
 }

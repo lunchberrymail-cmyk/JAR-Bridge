@@ -47,7 +47,8 @@ function joinCookieChunks(text: string): string | undefined {
 function fromRaw(input: string): string | undefined {
   let raw = input.replace(/^bearer\s+/i, '');
   try { raw = decodeURIComponent(raw); } catch { /* keep as pasted */ }
-  if (isJwt(raw)) return raw;
+  const pasted: unknown = raw;
+  if (isJwt(pasted)) return pasted;
   for (const text of [raw.startsWith('base64-') ? base64Url(raw.slice(7)) : undefined, raw]) {
     const session = object(safeJson(text));
     const token = session.access_token ?? object(session.currentSession).access_token;

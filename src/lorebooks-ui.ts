@@ -1,6 +1,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import type { createJarClient } from './client';
 import { importNativeLorebook, ImportError, type ImportedCharacter, type ImportedLorebook } from './import-flow';
+import type { JarScriptsResult } from './jar-adapter';
 import { defaultLoreTrigger, loreTriggerSources, MAX_TRIGGER_TEXT, nativeLorebook, type JarLoreTrigger, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 
 type Client = ReturnType<typeof createJarClient>;
@@ -56,7 +57,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
 
   const root = el('section', 'jar-lorebooks'); root.hidden = true; root.setAttribute('aria-label', 'Lorebooks from JAR');
   const heading = el('h2', '', 'Lorebooks');
-  const intro = el('p', 'jar-help', 'Lorebooks JAR found for this character. Public lorebooks are imported and attached automatically when you import the character card; you can also import them on their own.');
+  const intro = el('p', 'jar-help', 'Lorebooks and scripts JAR found for this character. Public lorebooks are imported and attached automatically when you import the character card, and scripts are turned on for it; you can also import lorebooks on their own.');
   // Rebuilt books are not attached automatically, so they get their own prompt above the list.
   const callout = el('div', 'jar-lorebook-callout'); callout.hidden = true; callout.setAttribute('role', 'group'); callout.setAttribute('aria-label', 'Rebuilt lorebook');
   const calloutText = el('p', '');
@@ -104,6 +105,25 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     void checkEmbeddings();
   });
   vectorizeLabel.append(vectorize, el('span', '', 'Vectorize imported lorebooks (keywords still work; Lumiverse’s embeddings also match entries by meaning)'));
+  // JanitorAI scripts with public code run as they are before each reply, in a
+  // sandbox with no network, files or Lumiverse access. The choice is remembered per browser.
+  const SCRIPTS_KEY = 'jar_bridge:run_scripts';
+  /** The character the scripts were turned on for in this panel, and whether that was tried automatically. */
+  let scriptsFor: ImportedCharacter | undefined, scriptsTried = false;
+  const scriptBox = el('div', 'jar-lorebook-scripts'); scriptBox.hidden = true; scriptBox.setAttribute('role', 'group'); scriptBox.setAttribute('aria-label', 'JanitorAI scripts');
+  const scriptTitle = el('h3', '', 'Scripts');
+  const scriptText = el('p', 'jar-help');
+  const scriptsLabel = el('label', 'jar-checkbox');
+  const scriptsOn = el('input'); scriptsOn.type = 'checkbox';
+  try { scriptsOn.checked = globalThis.localStorage?.getItem(SCRIPTS_KEY) !== '0'; } catch { scriptsOn.checked = true; }
+  scriptsOn.addEventListener('change', () => { try { globalThis.localStorage?.setItem(SCRIPTS_KEY, scriptsOn.checked ? '1' : '0'); } catch { /* this page only */ } render(); });
+  scriptsLabel.append(scriptsOn, el('span', '', 'Run scripts when I import the character'));
+  const scriptButton = button('', () => {
+    const target = attachTarget();
+    if (target && scriptsFor?.id === target.id) void stopScripts(target); else if (target) void startScripts(target);
+  }, 'jar-button');
+  const scriptRow = el('div', 'jar-actions jar-lorebook-actions'); scriptRow.append(scriptButton);
+  scriptBox.append(scriptTitle, scriptText, scriptsLabel, scriptRow);
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -144,7 +164,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   waitRow.append(waitText, stop);
   const status = el('p', 'jar-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const refresh = button('Check JAR for lorebooks', () => { void load(); }, 'jar-link');
-  root.append(heading, intro, refresh, picker, vectorizeLabel, vectorizeHint, notice, callout, books, closed, waitRow, status);
+  root.append(heading, intro, refresh, picker, vectorizeLabel, vectorizeHint, notice, callout, books, scriptBox, closed, waitRow, status);
   function pendingRebuilt() { return data?.books.find(book => book.kind === 'rebuilt' && !uncertain.has(bookKey(book)) && (!imported.has(bookKey(book)) || needsAttach(book))); }
 
   function message(text: string, tone = '') { if (disposed) return; status.textContent = text; status.dataset.tone = tone; status.hidden = !text; }
@@ -171,7 +191,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     calloutWithCard.className = calloutWithCard.hidden ? 'jar-button' : 'jar-button jar-primary';
     calloutButton.className = calloutWithCard.hidden ? 'jar-button jar-primary' : 'jar-button';
     if (calloutRow.firstChild !== (calloutWithCard.hidden ? calloutButton : calloutWithCard)) calloutRow.prepend(calloutWithCard.hidden ? calloutButton : calloutWithCard);
-    picker.hidden = !!character || !data || !data.books.length;
+    const scripts = data?.scripts || [];
+    picker.hidden = !!character || !data || !(data.books.length || scripts.length);
     vectorizeLabel.hidden = !data || !data.books.length; vectorize.disabled = locked;
     if (vectorizeLabel.hidden) vectorizeHint.hidden = true;
     pickerSelect.replaceChildren(option('Do not attach (World Info only)', ''), ...matches.map(item => option(item.name, item.id)));
@@ -181,7 +202,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     renderBanner();
     books.replaceChildren();
     for (const book of data?.books || []) books.append(renderBook(book, locked));
-    if (data && !data.books.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
+    renderScripts(locked);
+    if (data && !data.books.length && !scripts.length) books.append(el('p', 'jar-help', data.closedTitles.length ? 'No lorebook is ready to import yet.' : 'JAR found no lorebooks for this character.'));
     heading.textContent = hiddenCard ? 'Hidden card and lorebooks' : 'Lorebooks';
     const showClosed = !!data && (hiddenCard || data.closedTitles.length > 0 || data.captured);
     closed.hidden = !showClosed;
@@ -215,9 +237,53 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     root.setAttribute('aria-busy', String(busy));
   }
 
+  function renderScripts(locked: boolean) {
+    const scripts = data?.scripts || [];
+    scriptBox.hidden = !scripts.length || hiddenCard;
+    if (scriptBox.hidden) return;
+    const target = attachTarget(), running = !!target && scriptsFor?.id === target.id;
+    const names = scripts.map(script => script.title).join(', ');
+    const one = scripts.length === 1;
+    scriptText.textContent = running
+      ? `${names} run${one ? 's' : ''} before each reply of ${target!.name}, like on JanitorAI. Scripts can only add text to the description and scenario sent to the AI.`
+      : `This character has ${one ? 'a JanitorAI script' : `${scripts.length} JanitorAI scripts`} (${names}). JAR Bridge can run ${one ? 'it' : 'them'} before each reply, like on JanitorAI, in a sandbox with no internet, files or Lumiverse access.`;
+    scriptsLabel.hidden = !!target; scriptsOn.disabled = locked;
+    scriptButton.hidden = !target;
+    if (target) scriptButton.textContent = running ? `Stop running scripts on ${target.name}` : `Run scripts on ${target.name}`;
+    scriptButton.className = running ? 'jar-button' : 'jar-button jar-primary';
+    scriptButton.disabled = locked;
+  }
+
+  async function startScripts(target: ImportedCharacter) {
+    if (disposed || busy || outerBusy || !recordId) return;
+    const token = ++generation;
+    setBusy(true); message(`Turning on scripts for ${target.name}…`);
+    try {
+      const result = await options.client.request('attach-scripts', options.getBaseUrl(), recordId, undefined, undefined, { characterId: target.id }) as JarScriptsResult;
+      if (disposed || token !== generation) return;
+      scriptsFor = target;
+      message(`${result.scripts.length === 1 ? 'Its script runs' : `${result.scripts.length} scripts run`} before each reply of ${target.name}.`, 'success');
+    } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(`Scripts not turned on: ${error instanceof Error ? error.message : 'try again.'}`, 'warning'); }
+    finally { if (!disposed && token === generation) setBusy(false); }
+  }
+
+  async function stopScripts(target: ImportedCharacter) {
+    if (disposed || busy || outerBusy) return;
+    const token = ++generation;
+    setBusy(true); message(`Turning off scripts for ${target.name}…`);
+    try {
+      await options.client.request('detach-scripts', options.getBaseUrl(), undefined, undefined, undefined, { characterId: target.id });
+      if (disposed || token !== generation) return;
+      scriptsFor = undefined;
+      message(`Scripts are off for ${target.name}. The rest of the card is unchanged.`, 'success');
+    } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'Scripts could not be turned off.', 'error'); }
+    finally { if (!disposed && token === generation) setBusy(false); }
+  }
+
   function renderBanner() {
     const publicBooks = data?.books.filter(book => book.kind === 'public') || [];
-    banner.hidden = !data || hiddenCard || !(publicBooks.length || data.closedTitles.length);
+    const scripts = data?.scripts || [];
+    banner.hidden = !data || hiddenCard || !(publicBooks.length || data.closedTitles.length || scripts.length);
     if (!data || banner.hidden) return;
     const done = (book: JarLorebook): [string, string] | undefined => {
       const attached = attachedTo.get(bookKey(book));
@@ -231,6 +297,13 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       : !data.allowProxy ? ['closed', 'CLOSED · cannot be captured']
         : data.captured ? ['partial', 'CLOSED · captured, not rebuilt'] : ['closed', 'CLOSED'];
     for (const title of data.closedTitles) rows.push([title, tone, state]);
+    const target = attachTarget();
+    for (const script of scripts) {
+      const [rowTone, label] = target && scriptsFor?.id === target.id ? ['done', `Script · runs on ${target.name}`]
+        : scriptsTried && character ? ['partial', 'Script · not running, see Scripts']
+          : scriptsOn.checked ? ['open', 'Script · runs with the card'] : ['open', 'Script · off'];
+      rows.push([script.title, rowTone, label]);
+    }
     bannerRows.replaceChildren(...rows.map(([title, rowTone, label]) => {
       const row = el('li', ''); row.dataset.tone = rowTone;
       row.append(el('span', 'jar-book-status-name', title), el('span', 'jar-book-status-state', label));
@@ -330,7 +403,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (disposed || busy || outerBusy || loading || !character || !data) return;
     let next = data.books.find(book => book.kind === 'public' && (!imported.has(bookKey(book)) || needsAttach(book)) && !uncertain.has(bookKey(book)) && !autoTried.has(bookKey(book)));
     if (!next && rebuiltAfterCard) { rebuiltAfterCard = false; next = pendingRebuilt(); }
-    if (!next) return;
+    if (!next) {
+      // Scripts follow the public books, once per imported character.
+      if (data.scripts?.length && scriptsOn.checked && !scriptsTried && scriptsFor?.id !== character.id) { scriptsTried = true; void startScripts(character); }
+      return;
+    }
     autoTried.add(bookKey(next));
     void importBook(next, true).then(autoImport);
   }
@@ -451,7 +528,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     show(id: string, hidden = false) {
       if (disposed) return;
       if (vectorize.checked) void checkEmbeddings();
-      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; character = undefined; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
+      if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; character = undefined; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); scriptsFor = undefined; scriptsTried = false; existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
       root.hidden = false; render(); if (!data) void load();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; character = undefined; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },

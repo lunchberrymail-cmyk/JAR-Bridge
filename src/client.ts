@@ -71,6 +71,11 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
   if (pending.command === 'lorebooks') return isLorebooks(result, pending.recordId);
   if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
   if (pending.command === 'attach-lorebook') return result.characterId === pending.extras?.characterId && Array.isArray(result.worldBookIds) && result.worldBookIds.includes(pending.extras?.worldBookId);
+  if (pending.command === 'attach-scripts' || pending.command === 'detach-scripts') {
+    return result.characterId === pending.extras?.characterId && Array.isArray(result.scripts)
+      && result.scripts.every(item => { const row = object(item); return !!row && typeof row.id === 'string' && typeof row.title === 'string'; })
+      && (pending.command === 'attach-scripts' ? result.scripts.length > 0 : result.scripts.length === 0);
+  }
   if (pending.command === 'record-details') {
     const asked = new Set(pending.extras?.recordIds || []);
     return Array.isArray(result.records) && result.records.every(item => { const row = object(item); return !!row && typeof row.id === 'string' && asked.has(row.id) && typeof row.characterId === 'string' && typeof row.conversations === 'number' && typeof row.captured === 'boolean'; });
@@ -89,6 +94,7 @@ function isLorebooks(value: unknown, recordId?: string): boolean {
   return !!result && isRecordId(result.recordId) && result.recordId === recordId && typeof result.allowProxy === 'boolean' && typeof result.captured === 'boolean'
     && typeof result.capturedAt === 'number' && typeof result.rebuiltAt === 'number' && Array.isArray(result.closedTitles)
     && (result.earlierRecordId === undefined || isRecordId(result.earlierRecordId))
+    && (result.scripts === undefined || (Array.isArray(result.scripts) && result.scripts.every(item => typeof object(item)?.title === 'string' && typeof object(item)?.id === 'string')))
     && Array.isArray(result.books) && result.books.every(item => {
       const book = object(item);
       return !!book && typeof book.key === 'string' && (book.kind === 'public' || book.kind === 'rebuilt') && typeof book.title === 'string'

@@ -1,4 +1,5 @@
 import { cardMetadata, isRecordId, object } from './jar-adapter';
+import { scriptTitles } from './script-source';
 
 /** One importable book. Entries keep JAR's SillyTavern World Info fields. */
 export interface JarLorebook {
@@ -25,6 +26,8 @@ export interface JarLorebooksResult {
   earlierRecordAt?: number;
   /** The earlier JAR record holding that capture (and any definition it recovered). */
   earlierRecordId?: string;
+  /** JanitorAI scripts with public code, which the bridge can run each reply. */
+  scripts?: { id: string; title: string }[];
 }
 export type JarLorebookAction = { state: 'done' | 'running'; lorebooks: JarLorebooksResult };
 
@@ -84,8 +87,12 @@ export function toLorebooks(recordValue: unknown): JarLorebooksResult {
   const books: JarLorebook[] = [];
   const closedTitles: string[] = [];
   const linked = Array.isArray(record.publicLorebooks) ? record.publicLorebooks : [];
+  const scripts = scriptTitles(record);
+  const runnable = new Set(scripts.map(script => script.id));
   for (const item of linked) {
     const book = object(item);
+    // A script with public code runs as it is; it is not a closed lorebook.
+    if (book.isJs === true && runnable.has(String(book.id ?? '').slice(0, 120))) continue;
     const title = text(book.title, MAX_TITLE).trim() || 'Untitled lorebook';
     const entries = book.accessible === false ? [] : worldInfoEntries(book.worldInfo);
     if (!entries.length) { closedTitles.push(title); continue; }
@@ -105,7 +112,7 @@ export function toLorebooks(recordValue: unknown): JarLorebooksResult {
     recordId: record.id, characterName: text(record.characterName, MAX_TITLE),
     allowProxy: meta.allow_proxy !== false,
     captured: !!payload && typeof payload === 'object' && Object.keys(payload).length > 0,
-    capturedAt: stamp(record.capturedAt), rebuiltAt, closedTitles, books,
+    capturedAt: stamp(record.capturedAt), rebuiltAt, closedTitles, books, ...(scripts.length ? { scripts } : {}),
   };
 }
 

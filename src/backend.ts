@@ -1,5 +1,5 @@
 import type { SpindleAPI } from 'lumiverse-spindle-types';
-import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarDeleteResult, type JarLinkResult, type JarRecordDetails, type JarResponse } from './jar-adapter';
+import { isRecordId, normalizeSummaries, object, toCardV2, type JarCardResult, type JarDeleteResult, type JarLinkResult, type JarRecordDetails, type JarResponse, type JarScriptsResult } from './jar-adapter';
 import { createJarTransport, JarStillRunningError, normalizeJarBase, type JarRoute } from './transport';
 import { characterIdOf, loreTrigger, mergeEarlierCapture, toLorebooks, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 import { assertLinkedConversation, isChatId, toConversations, toHistory } from './conversation-adapter';
@@ -8,12 +8,14 @@ import { createOwnerBinding, hasJarAccess } from './owner-binding';
 import { createLinkIndex } from './link-index';
 import { registerUuidHost } from './uuid-host';
 import { createJanitorDirect } from './janitor-direct';
+import { createScriptHost } from './script-host';
+import { hasScriptMacro, toScripts, withoutScriptMacros, withScriptMacro } from './script-source';
 
 type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
 const requestChannel = 'jar_bridge:request';
 const responseChannel = 'jar_bridge:response';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details', 'direct-save', 'direct-status', 'direct-clear', 'direct-preview']);
+const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details', 'direct-save', 'direct-status', 'direct-clear', 'direct-preview', 'attach-scripts', 'detach-scripts']);
 /** Lumiverse entity IDs are opaque; accept only short route-safe tokens. */
 function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -52,6 +54,8 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   const linkIndex = createLinkIndex(api);
   // Experimental JAR-free reads with the user's own JanitorAI login.
   const direct = createJanitorDirect(api);
+  // JanitorAI scripts run each reply through the jarScripts macro, in a sandbox.
+  const scriptHost = createScriptHost(api);
   // Earlier JAR record holding a closed-lorebook capture for a previewed record.
   const captureTargets = new Map<string, string>();
   let disposed = false;
@@ -109,6 +113,24 @@ export function setupJarBackend(api: SpindleAPI): () => void {
           const worldBookIds = Array.isArray(updated?.world_book_ids) ? updated.world_book_ids.filter(id => typeof id === 'string') : [];
           if (!worldBookIds.includes(request.worldBookId)) throw new Error('Lumiverse did not confirm the attachment. Check the character’s lorebooks before retrying.');
           if (current()) reply({ result: { characterId: request.characterId, worldBookIds } });
+          return;
+        }
+        if (command === 'detach-scripts') {
+          // Removes only the bridge's macros and saved scripts; the rest of the card is kept.
+          if (!isEntityId(request.characterId)) throw new Error('Choose the character again.');
+          const granted = await api.permissions.getGranted();
+          if (!current()) return;
+          if (!granted.includes('characters')) throw new Error('Allow Characters to change this character.');
+          const character = await api.characters.get(request.characterId, userId);
+          if (!current()) return;
+          if (!character || character.id !== request.characterId) throw new Error('This character is no longer in your library.');
+          if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
+          if (!current()) return;
+          if (hasScriptMacro(character.description) || hasScriptMacro(character.scenario)) {
+            await api.characters.update(request.characterId, { description: withoutScriptMacros(character.description || ''), scenario: withoutScriptMacros(character.scenario || '') }, userId);
+          }
+          await scriptHost.remove(request.characterId);
+          if (current()) reply({ result: { characterId: request.characterId, scripts: [] } satisfies JarScriptsResult });
           return;
         }
         if (command === 'direct-save' || command === 'direct-status' || command === 'direct-clear' || command === 'direct-preview') {
@@ -252,6 +274,32 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             if (!current()) return;
             result = { state, lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;
           }
+        } else if (command === 'attach-scripts') {
+          // Only scripts whose code the creator made public. They run in an
+          // interpreter with no network, files or Lumiverse access.
+          if (!isRecordId(request.recordId)) throw new Error('Preview a character from JAR first.');
+          if (!isEntityId(request.characterId)) throw new Error('Choose the imported character again.');
+          const granted = await api.permissions.getGranted();
+          if (!current()) return;
+          if (!granted.includes('characters')) throw new Error('Allow Characters to run scripts on this character.');
+          const record = object(await get({ kind: 'card', recordId: request.recordId }));
+          if (!current()) return;
+          if (record.id !== request.recordId) throw new Error('JAR returned a different character. Preview the link again.');
+          const scripts = toScripts(record);
+          if (!scripts.length) throw new Error('JAR found no scripts with public code for this character.');
+          const character = await api.characters.get(request.characterId, userId);
+          if (!current()) return;
+          if (!character || character.id !== request.characterId) throw new Error('This character is no longer in your library.');
+          if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
+          if (!current()) return;
+          await scriptHost.save(request.characterId, character.name, scripts);
+          if (!current()) return;
+          const updated = await api.characters.update(request.characterId, {
+            description: withScriptMacro(character.description || '', 'personality', request.characterId),
+            scenario: withScriptMacro(character.scenario || '', 'scenario', request.characterId),
+          }, userId);
+          if (!hasScriptMacro(updated?.description)) throw new Error('Lumiverse did not confirm the change. Check the character’s description before retrying.');
+          result = { characterId: request.characterId, scripts: scripts.map(({ id, title }) => ({ id, title })) } satisfies JarScriptsResult;
         } else if (command === 'record-details') {
           const ids = request.recordIds;
           if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !ids.every(isRecordId) || new Set(ids).size !== ids.length) throw new Error('Choose the JAR records to check again.');
@@ -323,7 +371,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   });
   // cors has no cancellation signal: ignore in-flight results after cancellation
   // and prevent any remaining request in a sequence from starting.
-  return () => { disposed = true; stopUuids(); off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
+  return () => { disposed = true; stopUuids(); scriptHost.dispose(); off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
 }
 
 declare const spindle: SpindleAPI;

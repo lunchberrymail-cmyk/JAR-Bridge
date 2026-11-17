@@ -13,6 +13,7 @@ This is an unofficial bridge for [alpha-omicron/JAR](https://github.com/alpha-om
 | PNG, JSON or CHARX character card | Character definition and supported card data; portraits when included | No |
 | JAR JSON or SillyTavern JSONL history file | Messages and alternate replies for a character you choose | No |
 | Lorebooks of a previewed JanitorAI character | Public lorebooks, and closed ones JAR captured and rebuilt | Yes |
+| Scripts of a previewed JanitorAI character | Advanced scripts with public code, run before each reply like on JanitorAI | Yes, to import them |
 
 A character card and a conversation are different things. Bring both to resume an old chat, or import only the history if its character is already in your Lumiverse library. A portrait or screenshot by itself is not a character card.
 
@@ -103,6 +104,25 @@ A closed lorebook is one its creator chose not to share, and automated capture m
 
 Capture and rebuild can take longer than Lumiverse's 30-second connection limit. JAR keeps working after the connection closes, so the importer checks the character's JAR record every few seconds for up to 10 minutes. **Stop waiting** stops checking; JAR may still finish, and **Check JAR for lorebooks** reads the result later.
 
+## Run JanitorAI scripts
+
+Some JanitorAI characters come with **advanced scripts**: small JavaScript programs that run before every bot reply and add text to the character's personality or scenario, for example lore that appears when you mention a place, moods, random events or stages that unlock after a number of messages. JAR Bridge can run them unchanged in Lumiverse.
+
+- After you preview a character link, scripts whose code the creator made public are listed in a **Scripts** section and beside the card name (*Script · runs with the card*).
+- When you import the card, its scripts are turned on for it (the **Run scripts when I import the character** tick, on by default and remembered in your browser, controls this). For a character you imported earlier, choose it under **Already have this character in Lumiverse?**, then **Run scripts on <character>**.
+- **Stop running scripts on <character>** turns them off again. Only the bridge's macros are removed; the rest of the card is unchanged.
+
+How it works: the bridge adds a `{{jarScripts::…}}` macro at the very end of the character's description (JanitorAI's *personality*) and scenario. Before each reply, Lumiverse asks the bridge for those macros; the bridge runs the scripts once with what JanitorAI would give them (your last message, the message count, the character's name, personality and scenario) and returns exactly the text they added, joined to the field the same way JanitorAI joins it. Without a keyword match a script adds nothing. `{{user}}` and `{{char}}` in a script's text become your names; other macros it writes are passed as plain text.
+
+Scripts run in a separate JavaScript interpreter (QuickJS) with no internet, files, Lumiverse or JAR Bridge access. Each run is limited in time (0.2 seconds per script) and memory (16 MB); built-in calls on huge arrays or text are refused; a script that fails is skipped and the next one still runs; one that runs for more than a second is not run again until JAR Bridge restarts. Lumiverse's install scanner finds nothing to flag in the bundled interpreter.
+
+Limits:
+
+- Scripts whose code is private cannot be run, because their code is not available. They are listed as closed lorebooks and can be captured and rebuilt like those.
+- Scripts only see your latest message and the bot's latest reply, not the full chat history. Lumiverse counts the greeting as a message, which can make *after N messages* stages start one message early.
+- If you uninstall JAR Bridge, turn scripts off first, otherwise the macro text stays at the end of the description and scenario. You can also delete it by hand in the character editor.
+- Scripts are not offered for cards read with the experimental JanitorAI login yet.
+
 ## Experimental: your JanitorAI login instead of JAR
 
 Under the link field, **Experimental: use your JanitorAI login instead of JAR** reads a character's public definition straight from JanitorAI, without JAR running. To get your login: on janitorai.com, signed in, press F12 → **Network** tab, reload, right-click any janitorai.com request → **Copy → Copy as cURL**, and paste that into the panel. The bridge reads only your login token from it (the request's `Bearer` token, or its cookie). Choose **Save login**, then **Preview the link above with my JanitorAI login**. The card opens in the normal preview and imports the same way. (Copying the `sb-auth-auth-token.0` and `.1` cookie values by hand still works too; the panel explains where. This needs the browser's developer tools, so it is a desktop method — phones have no Network tab.)
@@ -145,7 +165,7 @@ Existing chats stay separate. Lumiverse's usual API, prompts, presets and other 
 ## Permissions and privacy
 
 - **CORS proxy:** accesses the selected local JAR service. Link previews can ask JAR to use its signed-in browser to retrieve the selected character or conversation. Supported service addresses are HTTP loopback (`127.0.0.1`, `localhost` or `[::1]`). Use a trusted JAR service; Lumiverse's proxy follows redirects.
-- **Characters:** saves the explicitly reviewed card through Lumiverse's native importer.
+- **Characters:** saves the explicitly reviewed card through Lumiverse's native importer, and adds or removes the script macros when you turn scripts on or off.
 - **Chats:** saves the reviewed conversation for the character you explicitly choose.
 - **World Books:** saves lorebooks and attaches them to the character you just imported (public ones automatically with the card, rebuilt ones when you choose).
 
@@ -162,4 +182,4 @@ bun test
 bun run build
 ```
 
-There are no runtime package dependencies. Source and prebuilt `dist/` bundles are included. Run `bun run typecheck` to check production source against the pinned Spindle SDK. The portable tests use synthetic data and mocked host APIs; they do not need a signed-in JAR or Lumiverse server. Unfamiliar API responses fail with an error instead of creating an empty card/chat.
+The backend bundle includes the QuickJS interpreter ([quickjs-emscripten](https://github.com/justjake/quickjs-emscripten), MIT) used for JanitorAI scripts; there are no other runtime dependencies, and nothing is downloaded at runtime. Source and prebuilt `dist/` bundles are included. Run `bun run typecheck` to check production source against the pinned Spindle SDK. The portable tests use synthetic data and mocked host APIs; they do not need a signed-in JAR or Lumiverse server. Unfamiliar API responses fail with an error instead of creating an empty card/chat.

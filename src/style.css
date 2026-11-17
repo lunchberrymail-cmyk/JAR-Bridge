@@ -111,6 +111,8 @@
 .jar-lorebook-actions>.jar-checkbox { margin-right:auto; padding:0; }
 .jar-lorebook-closed { border-top:1px solid #494150; padding-top:12px; margin-top:4px; }
 .jar-lorebook-closed>h3 { font-size:14px; margin:0 0 4px; color:#eee4f8; }
+.jar-lorebook-scripts { border-top:1px solid #494150; padding-top:12px; margin-top:4px; }
+.jar-lorebook-scripts>h3 { font-size:14px; margin:0 0 4px; color:#eee4f8; }
 .jar-lorebook-confirm { border:1px solid #8a6d5a; background:#3a2f2a; border-radius:9px; padding:12px; margin-top:12px; }
 .jar-lorebook-confirm .jar-help { color:#e7d2bd; margin-top:0; }
 .jar-lorebook-picker { display:flex; flex-direction:column; gap:8px; margin:12px 0; }
