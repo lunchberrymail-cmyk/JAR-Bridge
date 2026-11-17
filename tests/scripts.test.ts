@@ -77,6 +77,12 @@ describe('JanitorAI script runner', () => {
     expect(probe.scenario.split(',').every(type => type === 'undefined')).toBe(true);
   });
 
+  test('scripts can read the persona name and each recent message role', async () => {
+    const result = await runScripts([script('context.character.scenario += context.chat.persona_name + ":" + context.chat.last_messages.map(function (m) { return m.role; }).join(",");')],
+      turn({ userName: 'Ana', lastMessages: [{ message: 'Hm.', is_bot: true, is_user: false, name: 'Klaus', role: 'assistant' }, { message: 'Hi', is_bot: false, is_user: true, name: 'Ana', role: 'user' }] }));
+    expect(result.scenario).toBe('Ana:assistant,user');
+  });
+
   test('keeps non-English text, symbols and emoji intact', async () => {
     const result = await runScripts([script('context.character.personality += " — ♡ café 東京 🎉 " + context.chat.last_message;')], turn({ lastMessage: 'ñandú ✩' }));
     expect(result.personality).toBe(' — ♡ café 東京 🎉 ñandú ✩');

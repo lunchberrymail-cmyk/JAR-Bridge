@@ -8,12 +8,15 @@ export type { JanitorScript };
 export interface ScriptTurn {
   name: string; userName: string; personality: string; scenario: string; exampleDialogs: string;
   lastMessage: string; messageCount: number;
-  lastMessages: { message: string; is_bot: boolean; is_user: boolean; name: string }[];
+  /** Recent messages, oldest first. `role` is what some scripts check instead of is_bot/is_user. */
+  lastMessages: { message: string; is_bot: boolean; is_user: boolean; name: string; role: 'user' | 'assistant' }[];
 }
 export interface ScriptRun { personality: string; scenario: string; errors: { title: string; message: string }[] }
 
-export const SCRIPT_BUDGET_MS = 200;
-export const TOTAL_BUDGET_MS = 1500;
+// Large world engines take 100–150 ms; the limit leaves room for slower computers.
+export const SCRIPT_BUDGET_MS = 500;
+// Below Lumiverse's 5-second macro limit.
+export const TOTAL_BUDGET_MS = 3000;
 /** Most text all scripts together may add to one field. */
 export const MAX_ADDED_CHARS = 60_000;
 const MEMORY_BYTES = 16 * 1024 * 1024;
@@ -89,7 +92,7 @@ export async function runScripts(scripts: JanitorScript[], turn: ScriptTurn): Pr
     const vm = runtime.newContext();
     try {
       const seed = JSON.stringify({
-        chat: { last_message: turn.lastMessage, lastMessage: turn.lastMessage, last_messages: turn.lastMessages, message_count: turn.messageCount, user_name: turn.userName },
+        chat: { last_message: turn.lastMessage, lastMessage: turn.lastMessage, last_messages: turn.lastMessages, message_count: turn.messageCount, user_name: turn.userName, persona_name: turn.userName },
         character: { name: turn.name, personality, scenario, example_dialogs: turn.exampleDialogs, example_dialogues: turn.exampleDialogs },
       });
       const boot = vm.evalCode(`globalThis.context = JSON.parse(${JSON.stringify(seed)}); globalThis.console = { log(){}, info(){}, warn(){}, error(){}, debug(){} };${GUARD}`);

@@ -16,8 +16,8 @@ function recent(chat: Record<string, unknown>, names: Record<string, unknown>, c
   const user = typeof chat.lastUserMessage === 'string' ? chat.lastUserMessage : '';
   const userName = typeof names.user === 'string' ? names.user : '';
   return [
-    ...(bot ? [{ message: bot, is_bot: true, is_user: false, name: character }] : []),
-    ...(user ? [{ message: user, is_bot: false, is_user: true, name: userName }] : []),
+    ...(bot ? [{ message: bot, is_bot: true, is_user: false, name: character, role: 'assistant' as const }] : []),
+    ...(user ? [{ message: user, is_bot: false, is_user: true, name: userName, role: 'user' as const }] : []),
   ];
 }
 

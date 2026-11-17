@@ -114,12 +114,12 @@ Some JanitorAI characters come with **advanced scripts**: small JavaScript progr
 
 How it works: the bridge adds a `{{jarScripts::…}}` macro at the very end of the character's description (JanitorAI's *personality*) and scenario. Before each reply, Lumiverse asks the bridge for those macros; the bridge runs the scripts once with what JanitorAI would give them (your last message, the message count, the character's name, personality and scenario) and returns exactly the text they added, joined to the field the same way JanitorAI joins it. Without a keyword match a script adds nothing. `{{user}}` and `{{char}}` in a script's text become your names; other macros it writes are passed as plain text.
 
-Scripts run in a separate JavaScript interpreter (QuickJS) with no internet, files, Lumiverse or JAR Bridge access. Each run is limited in time (0.2 seconds per script) and memory (16 MB); built-in calls on huge arrays or text are refused; a script that fails is skipped and the next one still runs; one that runs for more than a second is not run again until JAR Bridge restarts. Lumiverse's install scanner finds nothing to flag in the bundled interpreter.
+Scripts run in a separate JavaScript interpreter (QuickJS) with no internet, files, Lumiverse or JAR Bridge access. Each run is limited in time (0.5 seconds per script, 3 seconds for all of a character's scripts) and memory (16 MB); built-in calls on huge arrays or text are refused; a script that fails is skipped and the next one still runs; one that runs for more than a second is not run again until JAR Bridge restarts. Lumiverse's install scanner finds nothing to flag in the bundled interpreter.
 
 Limits:
 
 - Scripts whose code is private cannot be run, because their code is not available. They are listed as closed lorebooks and can be captured and rebuilt like those.
-- Scripts only see your latest message and the bot's latest reply, not the full chat history. Lumiverse counts the greeting as a message, which can make *after N messages* stages start one message early.
+- Scripts only see your latest message and the bot's latest reply, not the full chat history. Scripts that scan the last 10 or so messages (to tell which characters are in a scene, for example) still work, but only look at those two. Lumiverse counts the greeting as a message, which can make *after N messages* stages start one message early.
 - If you uninstall JAR Bridge, turn scripts off first, otherwise the macro text stays at the end of the description and scenario. You can also delete it by hand in the character editor.
 - Scripts are not offered for cards read with the experimental JanitorAI login yet.
 
