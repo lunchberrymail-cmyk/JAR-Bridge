@@ -238,7 +238,8 @@ test('importing a character with scripts turns them on, and the button turns the
   ui.show('record-1'); await settle();
   expect(ui.banner.textContent).toContain('Script · runs with the card');
   expect(ui.root.textContent).toContain('sandbox');
-  ui.setCharacter({ id: 'native-char-1', name: 'Klaus' }); for (let i = 0; i < 3; i++) await settle();
+  ui.setCharacter({ id: 'native-char-1', name: ' Klaus  ' }); for (let i = 0; i < 3; i++) await settle();
+  expect(ui.root.textContent).toContain('before each reply of Klaus.');
   expect(requests.filter(r => r.command === 'attach-scripts')).toEqual([expect.objectContaining({ recordId: 'record-1', characterId: 'native-char-1' })]);
   expect(ui.banner.textContent).toContain('Script · runs on Klaus');
   [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Stop running scripts on Klaus')!.click();

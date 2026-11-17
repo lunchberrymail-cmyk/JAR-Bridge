@@ -31,6 +31,8 @@ const MAX_PREVIEW_ENTRIES = 200;
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') { const node = document.createElement(tag); node.className = cls; node.textContent = text; return node; }
 function button(text: string, click: () => void, cls = 'jar-button') { const node = el('button', cls, text); node.type = 'button'; node.addEventListener('click', click); return node; }
 function option(text: string, value: string) { const node = el('option', '', text); node.value = value; return node; }
+/** Card names can carry stray spaces; messages show them collapsed. Only the display is changed. */
+function tidyName(name: string) { return name.replace(/\s+/g, ' ').trim() || name; }
 function isAbort(error: unknown) { return error instanceof Error && error.name === 'AbortError'; }
 function keys(value: unknown): string[] { return Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : []; }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -422,9 +424,9 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (!response.ok) throw new Error();
       const rows = (await response.json() as { data?: unknown }).data;
       if (disposed || token !== lookup || !Array.isArray(rows)) return;
-      matches = rows.filter((row): row is ImportedCharacter => !!row && typeof row.id === 'string' && typeof row.name === 'string').map(row => ({ id: row.id, name: row.name }));
+      matches = rows.filter((row): row is ImportedCharacter => !!row && typeof row.id === 'string' && typeof row.name === 'string').map(row => ({ id: row.id, name: tidyName(row.name) }));
       if (existing && !matches.some(item => item.id === existing!.id)) matches.unshift(existing);
-      if (preselect && !existing) existing = matches.find(item => item.name.trim().toLowerCase() === search.trim().toLowerCase());
+      if (preselect && !existing) existing = matches.find(item => item.name.toLowerCase() === tidyName(search).toLowerCase());
       render();
     } catch (error) { if (!isAbort(error) && !disposed && token === lookup) message('Could not search your character library.', 'warning'); }
   }
@@ -533,7 +535,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; character = undefined; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
     setCharacter(value?: ImportedCharacter) {
-      character = value; render(); autoImport();
+      character = value && { ...value, name: tidyName(value.name) }; render(); autoImport();
       if (value && pendingRebuilt()) callout.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
       else if (value && notice.dataset.tone === 'warning' && !notice.hidden) notice.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     },
