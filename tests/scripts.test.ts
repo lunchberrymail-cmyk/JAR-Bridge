@@ -2,7 +2,7 @@ import { withHostUuid } from './host-uuid-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { runScripts, type ScriptTurn } from '../src/script-runner';
-import { createScriptHost, settle as settleText } from '../src/script-host';
+import { chatHistory, createScriptHost, HISTORY_MESSAGES, settle as settleText } from '../src/script-host';
 import { hasScriptMacro, scriptMacro, toScripts, withoutScriptMacros, withScriptMacro } from '../src/script-source';
 import { toLorebooks } from '../src/lorebook-adapter';
 import { setupJarBackend } from '../src/backend';
@@ -252,4 +252,76 @@ test('importing a character with scripts turns them on, and the button turns the
   for (let i = 0; i < 3; i++) await settle();
   expect(requests.filter(r => r.command === 'detach-scripts')).toEqual([expect.objectContaining({ characterId: 'native-char-1' })]);
   expect(ui.root.textContent).toContain('Run scripts on Klaus');
+});
+
+describe('reading recent chat messages for scripts', () => {
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ content: `m${i}`, role: i % 2 ? 'assistant' : 'user', name: i % 2 ? 'Klaus' : 'Ana', hidden: false }));
+  const api = (granted: string[], messages: any[], lean = true) => {
+    const calls: any[] = [];
+    return { calls, api: { permissions: { getGranted: async () => granted }, host: { capabilities: lean ? { 'chat-lean-messages-v1': 1 } : {} },
+      chat: { getMessages: async (chatId: string, options?: any) => { calls.push([chatId, options]); return lean && options?.tail ? messages.slice(-options.tail) : messages; } } } as any };
+  };
+  test('without the permission nothing is read', async () => {
+    const a = api(['characters'], rows(5));
+    expect(await chatHistory(a.api, 'chat-1', 'm4')).toBeUndefined();
+    expect(a.calls).toEqual([]);
+  });
+  test('reads the last 20 messages oldest first, with roles, skipping hidden and system ones', async () => {
+    const list = [...rows(30), { content: 'note', role: 'system', name: '', hidden: false }];
+    list[27] = { ...list[27], hidden: true };
+    const a = api(['chat_mutation'], list);
+    const history = (await chatHistory(a.api, 'chat-1', 'm29'))!;
+    expect(a.calls[0]).toEqual(['chat-1', { tail: HISTORY_MESSAGES + 2, light: true, includeExtra: false }]);
+    expect(history.length).toBeLessThanOrEqual(HISTORY_MESSAGES);
+    expect(history.at(-1)).toEqual({ message: 'm29', is_bot: true, is_user: false, name: 'Klaus', role: 'assistant' });
+    expect(history.some(m => m.message === 'm27' || m.message === 'note')).toBe(false);
+    expect(history.find(m => m.message === 'm28')).toMatchObject({ role: 'user', is_user: true });
+  });
+  test('ends where the prompt ends: no empty reply placeholder, no reply being regenerated', async () => {
+    const list = [...rows(4), { content: '', role: 'assistant', name: 'Klaus', hidden: false }];
+    expect((await chatHistory(api(['chat_mutation'], list).api, 'c', 'm3'))!.map(m => m.message)).toEqual(['m0', 'm1', 'm2', 'm3']);
+    expect((await chatHistory(api(['chat_mutation'], rows(5)).api, 'c', 'm3'))!.map(m => m.message)).toEqual(['m0', 'm1', 'm2', 'm3']);
+  });
+  test('works on hosts without lean reads, and gives up quietly on errors', async () => {
+    const a = api(['chat_mutation'], rows(40), false);
+    expect((await chatHistory(a.api, 'c', 'm39'))!.length).toBe(HISTORY_MESSAGES);
+    expect(a.calls[0]).toEqual(['c', undefined]);
+    const broken: any = { permissions: { getGranted: async () => ['chat_mutation'] }, chat: { getMessages: async () => { throw new Error('nope'); } } };
+    expect(await chatHistory(broken, 'c', 'x')).toBeUndefined();
+  });
+  test('the macro hands scripts the longer history when allowed', async () => {
+    const files = new Map<string, string>(); let macro: any;
+    const host = createScriptHost({
+      storage: { read: async (p: string) => { if (!files.has(p)) throw new Error('missing'); return files.get(p)!; }, write: async (p: string, d: string) => { files.set(p, d); }, delete: async () => {} },
+      registerMacro: (def: any) => { macro = def; }, unregisterMacro() {},
+      ...api(['chat_mutation'], rows(12)).api,
+    } as any);
+    await host.save('char-1', 'Klaus', [script('context.character.scenario += context.chat.last_messages.length + ":" + context.chat.last_messages[0].role;')]);
+    const out = await macro.handler({ args: ['scenario', 'char-1'], chatId: 'chat-1', env: { names: { user: 'Ana' }, character: { name: 'Klaus', description: '', scenario: '' }, chat: { id: 'chat-1', messageCount: 12, lastMessage: 'm11', lastUserMessage: 'm10', lastCharMessage: 'm11' } } });
+    expect(out).toBe('12:user');
+  });
+});
+
+test('the Scripts section offers to read the last 20 messages through Lumiverse’s permission window', async () => {
+  const dom = new JSDOM('<body></body>', { url: 'http://localhost:7860' }); globalThis.document = dom.window.document;
+  let receive: (payload: unknown) => void = () => {};
+  const asked: any[] = []; let granted = ['cors_proxy', 'characters', 'world_books'];
+  const books = { recordId: 'record-1', characterName: 'Klaus', allowProxy: true, captured: false, capturedAt: 0, rebuiltAt: 0, closedTitles: [], books: [], scripts: [{ id: 'js-1', title: 'TITANS' }] };
+  const ctx: any = {
+    permissions: { getGranted: async () => granted, request: async (list: string[], options: any) => { asked.push([list, options.reason]); granted = [...granted, ...list]; return granted; } },
+    onBackendMessage: (fn: typeof receive) => { receive = fn; return () => {}; },
+    sendToBackend: (request: any) => { if (request.command === 'cancel') return; setTimeout(() => receive({ type: 'jar_bridge:response', id: request.id, command: request.command, result: books }), 0); },
+  };
+  globalThis.fetch = (async () => Response.json({ data: [] })) as any;
+  const client = createJarClient(withHostUuid(ctx));
+  const ui = createLorebooks(ctx, { client, getBaseUrl: () => 'http://localhost:4577', onBusy() {} });
+  document.body.append(ui.root); cleanups.push(() => { ui.destroy(); client.dispose(); dom.window.close(); });
+  ui.show('record-1'); await settle();
+  expect(ui.root.textContent).toContain('JAR Bridge only reads them');
+  const allow = [...ui.root.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Let scripts read the last 20 messages…')!;
+  expect(allow.hidden).toBe(false);
+  allow.click(); await settle();
+  expect(asked).toEqual([[['chat_mutation'], expect.stringContaining('only reads messages')]]);
+  expect(ui.root.textContent).toContain('Scripts read the last 20 messages of the chat');
+  expect(allow.hidden).toBe(true);
 });

@@ -1,5 +1,6 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import type { createJarClient } from './client';
+import { requestPermissions } from './permissions';
 import { importNativeLorebook, ImportError, type ImportedCharacter, type ImportedLorebook } from './import-flow';
 import type { JarScriptsResult } from './jar-adapter';
 import { defaultLoreTrigger, loreTriggerSources, MAX_TRIGGER_TEXT, nativeLorebook, type JarLoreTrigger, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
@@ -125,7 +126,25 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (target && scriptsFor?.id === target.id) void stopScripts(target); else if (target) void startScripts(target);
   }, 'jar-button');
   const scriptRow = el('div', 'jar-actions jar-lorebook-actions'); scriptRow.append(scriptButton);
-  scriptBox.append(scriptTitle, scriptText, scriptsLabel, scriptRow);
+  // Some scripts look further back than the last two messages Lumiverse hands a macro.
+  // Reading more needs Lumiverse's chat-message permission; the bridge only reads.
+  const HISTORY_PERMISSION = 'chat_mutation';
+  let historyAllowed: boolean | undefined;
+  const historyText = el('p', 'jar-help jar-lorebook-history');
+  const historyButton = button('Let scripts read the last 20 messages…', () => { void allowHistory(); }, 'jar-link');
+  scriptBox.append(scriptTitle, scriptText, scriptsLabel, scriptRow, historyText, historyButton);
+  async function checkHistory() {
+    try { historyAllowed = (await ctx.permissions.getGranted()).includes(HISTORY_PERMISSION); } catch { historyAllowed = undefined; }
+    if (!disposed) render();
+  }
+  async function allowHistory() {
+    if (disposed) return;
+    const granted = await requestPermissions(ctx, [HISTORY_PERMISSION], 'Lets JanitorAI scripts read the last 20 messages of the chat before each reply, as they do on JanitorAI. JAR Bridge only reads messages; it never changes or sends them.');
+    if (disposed) return;
+    historyAllowed = granted.includes(HISTORY_PERMISSION);
+    message(historyAllowed ? 'Scripts now read the last 20 messages of the chat.' : 'Scripts keep reading only the last two messages.', historyAllowed ? 'success' : '');
+    render();
+  }
   const books = el('div', 'jar-lorebook-list');
   const closed = el('div', 'jar-lorebook-closed');
   const closedTitle = el('h3', '', 'Closed lorebook');
@@ -254,6 +273,11 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (target) scriptButton.textContent = running ? `Stop running scripts on ${target.name}` : `Run scripts on ${target.name}`;
     scriptButton.className = running ? 'jar-button' : 'jar-button jar-primary';
     scriptButton.disabled = locked;
+    historyText.hidden = historyAllowed === undefined;
+    historyText.textContent = historyAllowed
+      ? 'Scripts read the last 20 messages of the chat, like on JanitorAI.'
+      : 'Scripts see your last message and the bot’s last reply. Some look further back, for example to tell who is in a scene. Allowing Lumiverse’s chat messages permission (chat_mutation) lets them read the last 20 messages; JAR Bridge only reads them.';
+    historyButton.hidden = historyAllowed !== false; historyButton.disabled = locked;
   }
 
   async function startScripts(target: ImportedCharacter) {
@@ -531,7 +555,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (disposed) return;
       if (vectorize.checked) void checkEmbeddings();
       if (recordId !== id || hiddenCard !== hidden) { hiddenCard = hidden; character = undefined; generation++; loading = false; recordId = id; data = undefined; confirming = undefined; autoTried.clear(); openKeys.clear(); scriptsFor = undefined; scriptsTried = false; existing = undefined; matches = []; lookup++; rebuiltAfterCard = false; pickerSearch.value = ''; resetTrigger(); message(''); }
-      root.hidden = false; render(); if (!data) void load();
+      root.hidden = false; render(); if (!data) void load(); void checkHistory();
     },
     hide() { if (disposed) return; generation++; if (waiting) options.client.cancel(); waiting = false; loading = false; recordId = undefined; hiddenCard = false; character = undefined; data = undefined; confirming = undefined; root.hidden = true; banner.hidden = true; message(''); if (busy) setBusy(false); },
     setCharacter(value?: ImportedCharacter) {

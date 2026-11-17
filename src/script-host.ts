@@ -21,6 +21,41 @@ function recent(chat: Record<string, unknown>, names: Record<string, unknown>, c
   ];
 }
 
+/** How many recent messages scripts get when the user allowed reading the chat. */
+export const HISTORY_MESSAGES = 20;
+/** Lumiverse's permission for reading chat messages. The bridge only reads with it. */
+export const HISTORY_PERMISSION = 'chat_mutation';
+
+type HistoryApi = Partial<Pick<SpindleAPI, 'chat' | 'permissions' | 'host'>>;
+
+/**
+ * The last messages of the chat, oldest first, as JanitorAI's last_messages.
+ * Needs the chat permission; without it, or on any failure, returns undefined
+ * and scripts get only the last two messages Lumiverse hands the macro.
+ */
+export async function chatHistory(api: HistoryApi, chatId: string, lastMessage: string): Promise<ScriptTurn['lastMessages'] | undefined> {
+  if (!chatId || typeof api.chat?.getMessages !== 'function' || typeof api.permissions?.getGranted !== 'function') return undefined;
+  try {
+    if (!(await api.permissions.getGranted()).includes(HISTORY_PERMISSION)) return undefined;
+    const lean = (api.host?.capabilities?.['chat-lean-messages-v1'] ?? 0) >= 1;
+    const rows = lean
+      ? await api.chat.getMessages(chatId, { tail: HISTORY_MESSAGES + 2, light: true, includeExtra: false })
+      : (await api.chat.getMessages(chatId)).slice(-(HISTORY_MESSAGES + 2));
+    const list = rows.filter(row => !row.hidden && row.role !== 'system' && typeof row.content === 'string');
+    // The reply being written can already exist as an empty message, and a regenerated
+    // reply is still stored: end the list where the prompt's last message is.
+    while (list.length && list[list.length - 1].role !== 'user' && !list[list.length - 1].content.trim()) list.pop();
+    if (lastMessage) {
+      const at = list.map(row => row.content).lastIndexOf(lastMessage);
+      if (at >= 0 && list.length - 1 - at <= 2) list.length = at + 1;
+    }
+    return list.slice(-HISTORY_MESSAGES).map(row => ({
+      message: row.content, is_bot: row.role !== 'user', is_user: row.role === 'user', name: typeof row.name === 'string' ? row.name : '',
+      role: row.role === 'user' ? 'user' as const : 'assistant' as const,
+    }));
+  } catch { return undefined; }
+}
+
 /** Resolve the usual names; any other macro a script wrote reaches the model as plain text. */
 export function settle(text: string, names: Record<string, unknown>): string {
   const user = typeof names.user === 'string' ? names.user : '';
@@ -33,7 +68,7 @@ export function settle(text: string, names: Record<string, unknown>): string {
  * scripts once; the description and scenario macros share that run, so random
  * choices agree between them.
  */
-export function createScriptHost(api: Pick<SpindleAPI, 'storage' | 'registerMacro' | 'unregisterMacro'>, run: typeof runScripts = runScripts) {
+export function createScriptHost(api: Pick<SpindleAPI, 'storage' | 'registerMacro' | 'unregisterMacro'> & HistoryApi, run: typeof runScripts = runScripts) {
   const cache = new Map<string, { at: number; result: Promise<ScriptRun> }>();
   const file = (characterId: string) => `${FILE_PREFIX}${characterId}.json`;
   const forget = (characterId: string) => { for (const key of cache.keys()) if (key.startsWith(`${characterId}\0`)) cache.delete(key); };
@@ -69,11 +104,12 @@ export function createScriptHost(api: Pick<SpindleAPI, 'storage' | 'registerMacr
     for (const [old, entry] of cache) if (now - entry.at > CACHE_MS) cache.delete(old);
     let entry = cache.get(key);
     if (!entry) {
-      entry = { at: now, result: run(stored.scripts, {
+      const promptLast = typeof chat.lastMessage === 'string' ? chat.lastMessage : lastMessage;
+      entry = { at: now, result: chatHistory(api, chatId, promptLast).then(history => run(stored.scripts, {
         name, userName: typeof names.user === 'string' ? names.user : '', personality, scenario,
         exampleDialogs: typeof character.mesExamples === 'string' ? character.mesExamples : '',
-        lastMessage, messageCount, lastMessages: recent(chat, names, name),
-      }) };
+        lastMessage, messageCount, lastMessages: history ?? recent(chat, names, name),
+      })) };
       cache.set(key, entry);
       while (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value!);
     }

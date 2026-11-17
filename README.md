@@ -119,7 +119,8 @@ Scripts run in a separate JavaScript interpreter (QuickJS) with no internet, fil
 Limits:
 
 - Scripts whose code is private cannot be run, because their code is not available. They are listed as closed lorebooks and can be captured and rebuilt like those.
-- Scripts only see your latest message and the bot's latest reply, not the full chat history. Scripts that scan the last 10 or so messages (to tell which characters are in a scene, for example) still work, but only look at those two. Lumiverse counts the greeting as a message, which can make *after N messages* stages start one message early.
+- By default, scripts see your latest message and the bot's latest reply. Many scripts look further back, for example to tell which characters are in a scene. **Let scripts read the last 20 messages…** in the Scripts section asks Lumiverse for its chat messages permission (`chat_mutation`); once allowed, scripts get the last 20 visible messages, oldest first, each with `is_user`, `is_bot` and `role`. JAR Bridge only reads them. Lumiverse counts the greeting as a message, which can make *after N messages* stages start one message early.
+- Some scripts try to remember things between replies by storing state inside the scenario. That state starts fresh every reply, as JanitorAI's documentation says it does there.
 - If you uninstall JAR Bridge, turn scripts off first, otherwise the macro text stays at the end of the description and scenario. You can also delete it by hand in the character editor.
 - Scripts are not offered for cards read with the experimental JanitorAI login yet.
 
@@ -168,6 +169,7 @@ Existing chats stay separate. Lumiverse's usual API, prompts, presets and other 
 - **Characters:** saves the explicitly reviewed card through Lumiverse's native importer, and adds or removes the script macros when you turn scripts on or off.
 - **Chats:** saves the reviewed conversation for the character you explicitly choose.
 - **World Books:** saves lorebooks and attaches them to the character you just imported (public ones automatically with the card, rebuilt ones when you choose).
+- **Chat mutation (optional):** only asked for when you choose **Let scripts read the last 20 messages…**. JAR Bridge uses it to read the last messages of the chat a script runs in; it never changes, adds or deletes messages. Without it, scripts see the last two messages.
 
 Opening the assistant or Help does not connect, request access or import anything. The first preview of a link may create/link a local JAR record (later previews reuse it), but do not send chat messages or create native Lumiverse chats/cards. Lorebook capture and rebuild run only after you confirm them for the previewed character: capture sends probe messages through JAR's JanitorAI session, and rebuild sends the captured text to the LLM configured in JAR. The bridge never runs either automatically, never reads JAR settings, credentials or session files, and never passes captured prompts to the browser, only the lorebook entries. Only supported HTTPS JanitorAI character/chat URLs are accepted; tracking parameters are removed.
 
