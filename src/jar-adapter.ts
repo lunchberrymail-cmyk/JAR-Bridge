@@ -55,7 +55,7 @@ export interface JarLinkResult {
 }
 export type JarCommand = 'check' | 'connect' | 'list' | 'card' | 'conversations' | 'history' | 'preview-link'
   | 'lorebooks' | 'capture-lorebook' | 'rebuild-lorebook' | 'attach-lorebook' | 'delete-records' | 'record-details'
-  | 'direct-save' | 'direct-status' | 'direct-clear' | 'direct-preview' | 'attach-scripts' | 'detach-scripts' | 'cancel';
+  | 'direct-save' | 'direct-status' | 'direct-clear' | 'direct-preview' | 'attach-scripts' | 'detach-scripts' | 'rebuild-lumiverse' | 'cancel';
 export interface JarRequest {
   type: 'jar_bridge:request'; id: string; command: JarCommand;
   baseUrl?: string; recordId?: string; chatId?: string; sourceUrl?: string;

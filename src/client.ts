@@ -28,6 +28,8 @@ export class CancelledError extends Error {
 
 let clientSequence = 0;
 const TIMEOUT_MS = 90_000;
+/** Slightly longer than the backend's own limit, so its message arrives first. */
+const LONG_TIMEOUT_MS: Partial<Record<Command, number>> = { 'rebuild-lumiverse': 15 * 60_000 + 30_000 };
 const GENERIC_ERROR = 'JAR could not complete this request. Check JAR and try again.';
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -69,7 +71,7 @@ function isResult(value: unknown, pending: Pending): value is NonNullable<Result
       && typeof history.messageCount === 'number' && Number.isSafeInteger(history.messageCount) && history.messageCount > 0;
   }
   if (pending.command === 'lorebooks') return isLorebooks(result, pending.recordId);
-  if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
+  if (pending.command === 'capture-lorebook' || pending.command === 'rebuild-lorebook' || pending.command === 'rebuild-lumiverse') return (result.state === 'done' || result.state === 'running') && isLorebooks(result.lorebooks, pending.recordId);
   if (pending.command === 'attach-lorebook') return result.characterId === pending.extras?.characterId && Array.isArray(result.worldBookIds) && result.worldBookIds.includes(pending.extras?.worldBookId);
   if (pending.command === 'attach-scripts' || pending.command === 'detach-scripts') {
     return result.characterId === pending.extras?.characterId && Array.isArray(result.scripts)
@@ -202,7 +204,7 @@ export function createJarClient(ctx: Context): {
             if (!detach(pending)) return;
             reject(new Error('JAR Bridge did not reply. Reload the extension in Lumiverse, then check the JAR connection again.'));
             sendCancel(pending);
-          }, TIMEOUT_MS),
+          }, LONG_TIMEOUT_MS[command] ?? TIMEOUT_MS),
         };
         active = pending;
         try {

@@ -6,7 +6,7 @@ import type { JarScriptsResult } from './jar-adapter';
 import { defaultLoreTrigger, loreTriggerSources, MAX_TRIGGER_TEXT, nativeLorebook, type JarLoreTrigger, type JarLorebook, type JarLorebookAction, type JarLorebooksResult } from './lorebook-adapter';
 
 type Client = ReturnType<typeof createJarClient>;
-type Action = 'capture' | 'rebuild';
+type Action = 'capture' | 'rebuild' | 'rebuild-lumiverse';
 type TriggerSource = typeof loreTriggerSources[number];
 const sourceLabels: Record<TriggerSource, string> = {
   card: 'Character card', siteDescription: 'Card description on JanitorAI', scenario: 'Scenario', greetings: 'First message(s)',
@@ -41,6 +41,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const confirmText: Record<Action, string> = {
   capture: 'JAR will open its signed-in JanitorAI browser, create a temporary chat with this character, send probe messages to trigger its lorebook entries, then delete the chat. Entries only appear when one of their keywords is in the trigger message, so add any words you expect to unlock more. Use a throwaway JanitorAI account for this, not your main one. The creator chose to keep this lorebook closed.',
   rebuild: 'JAR will send the captured lorebook text and this character’s card to the extraction LLM set in JAR’s ⚙ Settings. This uses that service’s quota or credit. The LLM infers trigger keywords, so review them after import.',
+  'rebuild-lumiverse': 'JAR Bridge will send the captured lorebook text and this character’s card to the AI connection you chat with in Lumiverse, using the same instructions as JAR’s rebuild. This uses that connection’s quota or credit and can take a few minutes for a large lorebook. The AI infers trigger keywords, so review them after import.',
 };
 
 /** Explicit lorebook import, capture and rebuild for the previewed JAR character. */
@@ -83,8 +84,10 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   // What a capture and rebuild can and cannot bring back, shown once JAR has captured anything.
   const notice = el('div', 'jar-lorebook-notice'); notice.hidden = true; notice.setAttribute('role', 'note'); notice.setAttribute('aria-label', 'About captured lorebooks');
   const noticeTitle = el('strong', ''); const noticeList = el('ul', '');
-  const noticeRebuild = button('Rebuild with JAR’s LLM…', () => ask('rebuild'), 'jar-button jar-primary');
-  notice.append(noticeTitle, noticeList, noticeRebuild);
+  const noticeRebuild = button('Rebuild with JAR’s LLM…', () => ask('rebuild'), 'jar-button');
+  const noticeRebuildLumiverse = button('Rebuild with Lumiverse’s AI…', () => ask('rebuild-lumiverse'), 'jar-button jar-primary');
+  const noticeActions = el('div', 'jar-actions'); noticeActions.append(noticeRebuildLumiverse, noticeRebuild);
+  notice.append(noticeTitle, noticeList, noticeActions);
   // Lets books be attached to a character imported earlier, outside this session.
   const picker = el('div', 'jar-lorebook-picker'); picker.hidden = true; picker.setAttribute('role', 'group'); picker.setAttribute('aria-label', 'Attach lorebooks to a character');
   const pickerLabel = el('label', 'jar-field');
@@ -151,7 +154,9 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   const closedText = el('p', 'jar-help');
   const captureButton = button('Capture closed lorebook…', () => ask('capture'));
   const rebuildButton = button('Rebuild with JAR’s LLM…', () => ask('rebuild'));
-  const closedActions = el('div', 'jar-actions jar-lorebook-actions'); closedActions.append(captureButton, rebuildButton);
+  // Uses the connection the user chats with, for when JAR has no extraction LLM.
+  const rebuildLumiverseButton = button('Rebuild with Lumiverse’s AI…', () => ask('rebuild-lumiverse'));
+  const closedActions = el('div', 'jar-actions jar-lorebook-actions'); closedActions.append(captureButton, rebuildLumiverseButton, rebuildButton);
   const confirm = el('div', 'jar-lorebook-confirm'); confirm.hidden = true; confirm.setAttribute('role', 'group'); confirm.setAttribute('aria-label', 'Confirm lorebook action');
   const confirmMessage = el('p', 'jar-help');
   // What JAR's trigger message contains: the user's words plus the chosen sources.
@@ -235,7 +240,7 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
         ? 'The creator hides this character’s definition and does not allow proxies, so JAR cannot recover it. Use a downloaded card file instead.'
         : `The creator hides this character’s definition. JAR can recover it from a temporary chat.${lore} The recovered card is pieced together from the chat prompt, so review it before importing.`;
       captureButton.hidden = !data.allowProxy; captureButton.textContent = 'Capture hidden card with JAR…';
-      rebuildButton.hidden = true;
+      rebuildButton.hidden = rebuildLumiverseButton.hidden = true;
     } else if (data && showClosed) {
       const earlier = data.earlierRecordAt ? `Using the capture JAR saved with an earlier copy of this character (captured ${new Date(data.earlierRecordAt).toLocaleString()}). ` : '';
       const titles = `${data.closedTitles.length ? `JAR could not download: ${data.closedTitles.join(', ')}. ` : ''}${earlier}`;
@@ -243,12 +248,14 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       closedText.textContent = !data.allowProxy
         ? `${titles}This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook.`
         : rebuilt ? `${titles}A rebuilt copy is listed above. You can capture or rebuild again if the lorebook changed.`
-          : data.captured ? `${titles}JAR has captured the closed lorebook text. Rebuild it with JAR’s LLM to get entries with trigger keywords.`
-            : `${titles}JAR can capture closed lorebook text, then rebuild it into entries with its LLM. Each step runs only when you confirm it.`;
+          : data.captured ? `${titles}JAR has captured the closed lorebook text. Rebuild it with your Lumiverse AI or JAR’s LLM to get entries with trigger keywords.`
+            : `${titles}JAR can capture closed lorebook text, then rebuild it into entries with your Lumiverse AI or JAR’s LLM. Each step runs only when you confirm it.`;
       captureButton.hidden = !data.allowProxy; captureButton.textContent = data.captured ? 'Capture again…' : 'Capture closed lorebook…';
-      rebuildButton.hidden = !data.captured; rebuildButton.textContent = rebuilt ? 'Rebuild again…' : 'Rebuild with JAR’s LLM…';
+      rebuildButton.hidden = rebuildLumiverseButton.hidden = !data.captured;
+      rebuildButton.textContent = rebuilt ? 'Rebuild again with JAR’s LLM…' : 'Rebuild with JAR’s LLM…';
+      rebuildLumiverseButton.textContent = rebuilt ? 'Rebuild again with Lumiverse’s AI…' : 'Rebuild with Lumiverse’s AI…';
     }
-    captureButton.disabled = locked || !!confirming; rebuildButton.disabled = locked || !!confirming;
+    captureButton.disabled = rebuildButton.disabled = rebuildLumiverseButton.disabled = locked || !!confirming;
     confirm.hidden = !confirming;
     if (confirming) { confirmMessage.textContent = (hiddenCard && confirming === 'capture' ? 'JAR also recovers the hidden character definition from this chat. ' : '') + confirmText[confirming]; confirmYes.textContent = confirming === 'capture' ? 'Yes, capture' : 'Yes, rebuild'; }
     trigger.hidden = confirming !== 'capture';
@@ -341,18 +348,18 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
   function renderNotice(locked: boolean) {
     const rebuilt = !!data?.books.some(book => book.kind === 'rebuilt');
     notice.hidden = !data || hiddenCard || !(data.captured || rebuilt);
-    if (!data || notice.hidden) { noticeRebuild.hidden = true; noticeList.replaceChildren(); return; }
+    if (!data || notice.hidden) { noticeRebuild.hidden = noticeRebuildLumiverse.hidden = true; noticeList.replaceChildren(); return; }
     const waitingRebuild = data.captured && !rebuilt;
     noticeTitle.textContent = waitingRebuild ? 'Captured, not rebuilt yet' : 'Check the rebuilt lorebook';
     const points = [
-      ...(waitingRebuild ? ['JAR has only the raw captured text. Nothing from the closed lorebook can be imported until it is rebuilt with JAR’s LLM.'] : []),
+      ...(waitingRebuild ? ['JAR has only the raw captured text. Nothing from the closed lorebook can be imported until it is rebuilt, with your Lumiverse AI or JAR’s LLM.'] : []),
       'Capture only records entries whose keywords appeared in the trigger message, so some entries can be missing. Capture again with more of your own words to find more.',
       'Trigger keywords are guessed by an LLM. Very general ones can make an entry fire too often; edit them in World Info after import.',
       ...(data.closedTitles.length > 1 ? [`JAR combines all ${data.closedTitles.length} closed lorebooks (${data.closedTitles.join(', ')}) into one rebuilt book.`] : []),
       ...(waitingRebuild && character ? [`${character.name} was imported without the closed lorebook.`] : []),
     ];
     noticeList.replaceChildren(...points.map(point => el('li', '', point)));
-    noticeRebuild.hidden = !waitingRebuild; noticeRebuild.disabled = locked || !!confirming;
+    noticeRebuild.hidden = noticeRebuildLumiverse.hidden = !waitingRebuild; noticeRebuild.disabled = noticeRebuildLumiverse.disabled = locked || !!confirming;
     notice.dataset.tone = waitingRebuild ? 'warning' : 'info';
   }
 
@@ -461,13 +468,20 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
     if (disposed || busy || outerBusy || !recordId || !data) return;
     const token = ++generation, id = recordId, before = data, forCard = hiddenCard && action === 'capture';
     let recovered = false;
-    const verb = action === 'capture' ? 'capturing the closed lorebook' : 'rebuilding the lorebook with its LLM';
-    setBusy(true); message(`JAR is ${verb}…`);
+    const verb = action === 'capture' ? 'capturing the closed lorebook' : action === 'rebuild' ? 'rebuilding the lorebook with its LLM' : 'rebuilding the lorebook';
+    if (action === 'rebuild-lumiverse') {
+      let granted: string[] = [];
+      try { granted = await ctx.permissions.getGranted(); } catch { /* ask below */ }
+      if (!granted.includes('generation')) granted = await requestPermissions(ctx, ['generation'], 'Lets JAR Bridge send a captured closed lorebook to the AI connection you chat with, to rebuild it into lorebook entries. It runs only when you choose Rebuild with Lumiverse’s AI.');
+      if (disposed || token !== generation) return;
+      if (!granted.includes('generation')) { message('Rebuilding with your Lumiverse AI needs the Generation permission. Nothing was sent.', 'warning'); return; }
+    }
+    setBusy(true); message(action === 'rebuild-lumiverse' ? 'Your Lumiverse AI is rebuilding the lorebook. A large lorebook can take a few minutes…' : `JAR is ${verb}…`);
     const finished = (next: JarLorebooksResult) => action === 'capture'
       ? next.captured && (next.capturedAt > before.capturedAt || !before.captured)
       : next.rebuiltAt > before.rebuiltAt;
     try {
-      const reply = await options.client.request(action === 'capture' ? 'capture-lorebook' : 'rebuild-lorebook', options.getBaseUrl(), id, undefined, undefined,
+      const reply = await options.client.request(action === 'capture' ? 'capture-lorebook' : action === 'rebuild' ? 'rebuild-lorebook' : 'rebuild-lumiverse', options.getBaseUrl(), id, undefined, undefined,
         action === 'capture' ? { ...(before.captured ? { force: true } : {}), trigger: triggerChoice() } : undefined) as JarLorebookAction;
       if (disposed || token !== generation) return;
       data = reply.lorebooks;
@@ -490,8 +504,8 @@ export function createLorebooks(ctx: Pick<SpindleFrontendContext, 'permissions'>
       if (disposed || token !== generation) return;
       if (forCard && finished(data)) { recovered = true; message('Captured. Loading the recovered card…', 'success'); return; }
       message(!finished(data) ? 'JAR did not report a new result. Check JAR’s console, then try again.'
-        : action === 'capture' ? 'Captured. Rebuild it with JAR’s LLM to get entries with trigger keywords.' : 'Rebuilt. Review the entries, then import the lorebook.', finished(data) ? 'success' : 'warning');
-    } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : 'JAR could not finish this step.', 'error'); }
+        : action === 'capture' ? 'Captured. Rebuild it with your Lumiverse AI or JAR’s LLM to get entries with trigger keywords.' : 'Rebuilt. Review the entries, then import the lorebook.', finished(data) ? 'success' : 'warning');
+    } catch (error) { if (!isAbort(error) && !disposed && token === generation) message(error instanceof Error ? error.message : action === 'rebuild-lumiverse' ? 'The rebuild did not finish. Try again.' : 'JAR could not finish this step.', 'error'); }
     finally { if (!disposed && token === generation) { waiting = false; setBusy(false); if (recovered && data) options.onHiddenCardCaptured?.(data.earlierRecordId || data.recordId); } }
   }
 

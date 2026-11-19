@@ -22,6 +22,8 @@ export function normalizeJarBase(value?: string): string {
 export type JarRoute = { kind: 'version' } | { kind: 'captures' } | { kind: 'card'; recordId: string } | { kind: 'history'; chatId: string }
   | { kind: 'inspect'; sourceUrl: string } | { kind: 'link-chat'; sourceUrl: string }
   | { kind: 'capture'; recordId: string; force: boolean; trigger?: JarLoreTrigger } | { kind: 'rebuild'; recordId: string }
+  /** The exact prompt JAR's rebuild would send, without calling JAR's LLM. */
+  | { kind: 'rebuild-prompt'; recordId: string }
   | { kind: 'delete'; recordId: string };
 export interface JarTransportOptions { current: () => boolean }
 
@@ -32,7 +34,7 @@ export interface JarTransportOptions { current: () => boolean }
 export class JarStillRunningError extends Error {
   constructor() { super('JAR is still working on this lorebook.'); this.name = 'JarStillRunningError'; }
 }
-const LLM_SETTINGS_HELP = 'Check the extraction LLM in JAR’s ⚙ Settings (address, API key and model), then try again.';
+const LLM_SETTINGS_HELP = 'Check the extraction LLM in JAR’s ⚙ Settings (address, API key and model), then try again, or use Rebuild with Lumiverse’s AI instead.';
 
 const JSON_CONTENT_TYPE = /\bapplication\/(?:[\w.-]+\+)?json\b/i;
 const MAX_ERROR_BODY_BYTES = 8192;
@@ -71,6 +73,7 @@ function knownJarError(response: Record<string, unknown>, route: JarRoute): stri
     if (/\bExtraction\s+LLM\b|\bparse\s+JSON\s+from\s+the\s+model\b|\bmodel\s+produced\s+no\s+entries\b/i.test(detail)) return `JAR’s extraction LLM did not return a usable lorebook. Try again, or choose a different model. ${LLM_SETTINGS_HELP}`;
     if (/\bno\s+lorebook\s+text\b/i.test(detail)) return 'JAR found no closed-lorebook text in its capture. Capture the closed lorebook again, then rebuild.';
   }
+  if (route.kind === 'rebuild-prompt' && /^not found$/i.test(detail.trim())) return 'JAR has no capture for this character yet. Capture the closed lorebook, then rebuild.';
   if (/^this conversation has no messages[.!]?$/i.test(detail.trim())) {
     return `JAR found this conversation, but it has no messages to import. Choose another conversation or a saved JAR JSON or SillyTavern JSONL file. ${HISTORY_FILE_HELP}`;
   }
@@ -107,6 +110,7 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
     else if (route.kind === 'history' && isChatId(route.chatId)) { path = '/api/chat-export'; body = JSON.stringify({ chat: route.chatId }); }
     else if (route.kind === 'capture' && isRecordId(route.recordId)) { path = '/api/capture'; body = JSON.stringify({ id: route.recordId, ...(route.force === true ? { force: true } : {}), ...(route.trigger ? { trigger: { ...route.trigger, custom: !!route.trigger.customText } } : {}) }); }
     else if (route.kind === 'rebuild' && isRecordId(route.recordId)) { path = '/api/extract'; body = JSON.stringify({ id: route.recordId }); }
+    else if (route.kind === 'rebuild-prompt' && isRecordId(route.recordId)) { path = '/api/extract-preview'; body = JSON.stringify({ id: route.recordId }); }
     else if (route.kind === 'inspect' || route.kind === 'link-chat') {
       const link = parseJanitorLink(route.sourceUrl);
       if (route.kind === 'inspect' && link.kind === 'character') { path = '/api/inspect'; body = JSON.stringify({ url: link.sourceUrl }); }
@@ -138,6 +142,8 @@ export function createJarTransport(api: Pick<SpindleAPI, 'permissions' | 'cors'>
           ? 'JAR could not capture this closed lorebook. Check that JAR is signed into JanitorAI and not busy, then try again.'
           : route.kind === 'rebuild'
             ? `JAR could not rebuild this lorebook. ${LLM_SETTINGS_HELP}`
+            : route.kind === 'rebuild-prompt'
+              ? 'JAR could not prepare the rebuild. Make sure JAR is up to date and has captured this lorebook, then try again.'
             : 'JAR could not complete this request. Check JAR and try again.'));
     if (response.encoding || typeof response.body !== 'string') throw new Error('JAR returned an unexpected response.');
     const type = contentType(response);

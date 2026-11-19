@@ -1,12 +1,12 @@
 {
-  "version": "0.11.0",
+  "version": "0.12.0",
   "name": "JAR Bridge",
   "identifier": "jar_bridge",
   "author": "lunchberrymail-cmyk",
   "github": "https://github.com/lunchberrymail-cmyk/JAR-Bridge",
   "homepage": "https://github.com/lunchberrymail-cmyk/JAR-Bridge",
   "description": "Bring JAR character cards, lorebooks and selected chat histories into your normal Lumiverse library.",
-  "permissions": ["cors_proxy", "characters", "chats", "world_books", "chat_mutation"],
+  "permissions": ["cors_proxy", "characters", "chats", "world_books", "chat_mutation", "generation"],
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",
   "minimum_lumiverse_version": "1.3.0"

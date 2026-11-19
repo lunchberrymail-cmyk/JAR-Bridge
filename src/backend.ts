@@ -9,13 +9,16 @@ import { createLinkIndex } from './link-index';
 import { registerUuidHost } from './uuid-host';
 import { createJanitorDirect } from './janitor-direct';
 import { createScriptHost } from './script-host';
+import { createRebuildStore, parseRebuiltEntries, promptMessages, replyText, withSavedRebuild } from './lumiverse-rebuild';
 import { hasScriptMacro, toScripts, withoutScriptMacros, withScriptMacro } from './script-source';
 
-type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout> };
+type Job = { id: string; cancelled: boolean; timer: ReturnType<typeof setTimeout>; abort: AbortController };
+/** A rebuild with the user's own AI can take minutes for a large lorebook. */
+const LONG_COMMANDS: Record<string, number> = { 'rebuild-lumiverse': 15 * 60_000 };
 const requestChannel = 'jar_bridge:request';
 const responseChannel = 'jar_bridge:response';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details', 'direct-save', 'direct-status', 'direct-clear', 'direct-preview', 'attach-scripts', 'detach-scripts']);
+const commands = new Set(['check', 'connect', 'list', 'card', 'conversations', 'history', 'preview-link', 'lorebooks', 'capture-lorebook', 'rebuild-lorebook', 'attach-lorebook', 'delete-records', 'record-details', 'direct-save', 'direct-status', 'direct-clear', 'direct-preview', 'attach-scripts', 'detach-scripts', 'rebuild-lumiverse']);
 /** Lumiverse entity IDs are opaque; accept only short route-safe tokens. */
 function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
@@ -56,6 +59,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   const direct = createJanitorDirect(api);
   // JanitorAI scripts run each reply through the jarScripts macro, in a sandbox.
   const scriptHost = createScriptHost(api);
+  const rebuilds = createRebuildStore(api);
   // Earlier JAR record holding a closed-lorebook capture for a previewed record.
   const captureTargets = new Map<string, string>();
   let disposed = false;
@@ -70,19 +74,22 @@ export function setupJarBackend(api: SpindleAPI): () => void {
     const owner = `${userId}\0${frontendSessionId}`;
     if (request.command === 'cancel') {
       const job = jobs.get(owner);
-      if (job?.id === id) { job.cancelled = true; clearTimeout(job.timer); jobs.delete(owner); binding.cancel(userId, frontendSessionId, id); }
+      if (job?.id === id) { job.cancelled = true; job.abort.abort(); clearTimeout(job.timer); jobs.delete(owner); binding.cancel(userId, frontendSessionId, id); }
       return;
     }
     const command = request.command as JarResponse['command'];
     if (typeof command !== 'string' || !commands.has(command)) return;
     const prior = jobs.get(owner);
-    if (prior) { prior.cancelled = true; clearTimeout(prior.timer); binding.cancel(userId, frontendSessionId, prior.id); }
+    if (prior) { prior.cancelled = true; prior.abort.abort(); clearTimeout(prior.timer); binding.cancel(userId, frontendSessionId, prior.id); }
     const reply = (data: Pick<JarResponse, 'result' | 'error'>) => {
       if (!disposed) api.sendToFrontend({ type: responseChannel, id, command, ...data } satisfies JarResponse, userId, { frontendSessionId });
     };
-    const job: Job = { id, cancelled: false, timer: setTimeout(() => {
-      if (!disposed && jobs.get(owner) === job) { job.cancelled = true; jobs.delete(owner); binding.cancel(userId, frontendSessionId, id); reply({ error: 'JAR took too long to respond. Check JAR, then try again.' }); }
-    }, 90_000) };
+    const job: Job = { id, cancelled: false, abort: new AbortController(), timer: setTimeout(() => {
+      if (!disposed && jobs.get(owner) === job) {
+        job.cancelled = true; job.abort.abort(); jobs.delete(owner); binding.cancel(userId, frontendSessionId, id);
+        reply({ error: command === 'rebuild-lumiverse' ? 'Your Lumiverse AI took longer than 15 minutes, so the rebuild was stopped. Try a faster model, then try again.' : 'JAR took too long to respond. Check JAR, then try again.' });
+      }
+    }, LONG_COMMANDS[command] ?? 90_000) };
     jobs.set(owner, job);
     const current = () => !disposed && !job.cancelled && jobs.get(owner) === job;
     void (async () => {
@@ -228,13 +235,13 @@ export function setupJarBackend(api: SpindleAPI): () => void {
               ...(url ? { characterUrl: url } : {}), ...(card ? { card } : {
                 warning: 'This conversation is ready to review, but its character definition is incomplete. Choose an existing Lumiverse character for the history, or import a downloaded card file first.' }) } satisfies JarLinkResult;
           }
-        } else if (command === 'lorebooks' || command === 'capture-lorebook' || command === 'rebuild-lorebook') {
+        } else if (command === 'lorebooks' || command === 'capture-lorebook' || command === 'rebuild-lorebook' || command === 'rebuild-lumiverse') {
           if (!isRecordId(request.recordId)) throw new Error('Preview a character from JAR first.');
           const recordId = request.recordId;
           const targetKey = `${owner}\0${baseUrl}\0${recordId}`;
           const hasCapture = (books: JarLorebooksResult) => books.captured || books.books.some(book => book.kind === 'rebuilt');
           // Returns the lorebook view and the JAR record capture/rebuild act on.
-          const read = async (): Promise<{ lorebooks: JarLorebooksResult; target: string }> => {
+          const readJar = async (): Promise<{ lorebooks: JarLorebooksResult; target: string }> => {
             const record = object(await get({ kind: 'card', recordId }));
             if (record.id !== recordId) throw new Error('JAR returned a different character. Preview the link again.');
             const fresh = toLorebooks(record);
@@ -260,10 +267,31 @@ export function setupJarBackend(api: SpindleAPI): () => void {
             captureTargets.delete(targetKey);
             return { lorebooks: fresh, target: recordId };
           };
+          // A rebuild made with the user's Lumiverse AI is kept by the bridge, not JAR.
+          const read = async () => {
+            const view = await readJar();
+            return { ...view, lorebooks: withSavedRebuild(view.lorebooks, await rebuilds.load(view.target)) };
+          };
           const { lorebooks: before, target } = await read();
           if (!current()) return;
           if (command === 'lorebooks') result = before;
-          else {
+          else if (command === 'rebuild-lumiverse') {
+            // JAR prepares the same prompt its own rebuild would send; the user's
+            // Lumiverse connection answers it instead of JAR's extraction LLM.
+            if (!before.captured) throw new Error('Capture the closed lorebook in JAR first, then rebuild it.');
+            const granted = await api.permissions.getGranted();
+            if (!current()) return;
+            if (!granted.includes('generation')) throw new Error('Allow Generation for JAR Bridge to rebuild with your Lumiverse AI.');
+            const messages = promptMessages(await get({ kind: 'rebuild-prompt', recordId: target }));
+            if (!current()) return;
+            if (!await hasJarAccess(api, userId)) throw new Error('JAR Bridge can no longer verify access for your Lumiverse account.');
+            if (!current()) return;
+            const reply = replyText(await api.generate.quiet({ type: 'quiet', messages, parameters: { temperature: 0.2 }, userId, signal: job.abort.signal }));
+            if (!current()) return;
+            await rebuilds.save({ schemaVersion: 1, recordId: target, rebuiltAt: Date.now(), capturedAt: before.capturedAt, model: reply.model, entries: parseRebuiltEntries(reply.text) });
+            if (!current()) return;
+            result = { state: 'done', lorebooks: (await read()).lorebooks } satisfies JarLorebookAction;
+          } else {
             // Capture sends messages through JAR's signed-in JanitorAI browser and
             // rebuild calls JAR's configured LLM. Each runs once, only on request.
             if (command === 'capture-lorebook' && !before.allowProxy) throw new Error('This character’s creator does not allow proxies, so JAR cannot capture its closed lorebook. Its public lorebooks can still be imported.');
@@ -371,7 +399,7 @@ export function setupJarBackend(api: SpindleAPI): () => void {
   });
   // cors has no cancellation signal: ignore in-flight results after cancellation
   // and prevent any remaining request in a sequence from starting.
-  return () => { disposed = true; stopUuids(); scriptHost.dispose(); off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
+  return () => { disposed = true; stopUuids(); scriptHost.dispose(); off(); binding.dispose(); for (const job of jobs.values()) { job.cancelled = true; job.abort.abort(); clearTimeout(job.timer); } jobs.clear(); captureTargets.clear(); };
 }
 
 declare const spindle: SpindleAPI;
